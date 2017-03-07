@@ -11,8 +11,8 @@ RUN apk add --no-cache --virtual .build-deps \
         zlib-dev
 
 RUN apk add --no-cache --virtual .run-deps \
-        && supervisor \
-        && wget
+        supervisor \
+        wget
 
 COPY . /app/
 COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
