@@ -35,15 +35,6 @@ RUN cd /app/src \
     )" \
     && apk add --no-cache --virtual .overpass-rundeps $runDeps \
     && apk del .build-deps
-RUN apk del \
-        autoconf \
-        automake \
-        expat-dev \
-        g++ \
-        libtool \
-        m4 \
-        make \
-        zlib-dev
 
 EXPOSE 80
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
