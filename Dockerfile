@@ -26,13 +26,13 @@ RUN cd /app/src \
     && autoconf \
     && ./configure --prefix=/app  \
     && make -j $(grep -c ^processor /proc/cpuinfo) install clean \
-    && runDeps="$(\
+    && runDeps="$( \
         scanelf --needed --nobanner /app/bin/* \
-        | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
-        | sort -u \
-        | xargs -r apk info --installed \
-        | sort -u \
-    ") \
+            | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
+            | sort -u \
+            | xargs -r apk info --installed \
+            | sort -u \
+    )" \
     && apk add --no-cache --virtual .overpass-rundeps $runDeps \
     && apk del .build-deps
 RUN apk del \
