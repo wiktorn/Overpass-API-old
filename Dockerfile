@@ -18,11 +18,13 @@ RUN apk update && \
 COPY . /app/
 COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-RUN cd /app && \
-    autoreconf && \
+RUN cd /app/src && \
+    autoscan && \
+    aclocal && \
+    autoheader && \
     libtoolize && \
     automake --add-missing && \
-    autoreconf && \
+    autoconf && \
     ./configure --prefix=/app && \
     make install clean
 
