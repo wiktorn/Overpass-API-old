@@ -17,7 +17,7 @@ RUN apk add --no-cache --virtual .run-deps \
         bash \
         wget
 
-COPY . /app/
+COPY build cgi-bin CHANGELOG COPYING doc konzept.txt konzept_vereinfachte_db.txt konzeptheft.txt munin osm-3s_testing query_shortcuts README some_rules.xml src templates utils /app/
 COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 RUN cd /app/src \
