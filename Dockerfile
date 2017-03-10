@@ -1,5 +1,7 @@
 FROM nginx:stable-alpine
 
+RUN groupadd -r overpasss && useradd -r -g overpass overpass
+
 RUN apk add --no-cache --virtual .build-deps \
         autoconf \
         automake \
@@ -12,6 +14,7 @@ RUN apk add --no-cache --virtual .build-deps \
 
 RUN apk add --no-cache --virtual .run-deps \
         supervisor \
+        bash \
         wget
 
 COPY . /app/
@@ -36,6 +39,8 @@ RUN cd /app/src \
     && apk add --no-cache --virtual .overpass-rundeps $runDeps \
     && apk del .build-deps
 
+VOLUME /db
+
 EXPOSE 80
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
-
+ENTRYPOINT ["docker-entrypoint.sh"]
