@@ -1,6 +1,6 @@
 FROM nginx:stable-alpine
 
-RUN groupadd -r overpasss && useradd -r -g overpass overpass
+RUN addgroup -S overpasss && adduser -D -S -h /db -s /sbin/nologin -G overpass overpass
 
 RUN apk add --no-cache --virtual .build-deps \
         autoconf \
