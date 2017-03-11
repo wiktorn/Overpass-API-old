@@ -45,6 +45,8 @@ RUN apt-get install --no-install-recommends --no-install-suggests -y \
         fcgiwrap \
         bzip2
 
+
+RUN mkdir /nginx && chown nginx:nginx /nginx
 COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY etc/nginx-overpass.conf /etc/nginx/nginx.conf
 
