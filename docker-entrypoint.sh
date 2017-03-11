@@ -13,7 +13,7 @@ if [ ! -d /db/db ] ; then
 
     if [ "$OVERPASS_MODE" = "init" ]; then
         wget -O /db/planet "$OVERPASS_PLANET_URL"
-        /app/bin/init_osm3s.sh /db/planet /db/db /app/bin "--meta=$OVERPASS_META"
+        /app/bin/init_osm3s.sh /db/planet /db/db /app "--meta=$OVERPASS_META"
         rm /db/planet
     fi
 fi
