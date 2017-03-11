@@ -22,7 +22,6 @@ RUN apt-get install --no-install-recommends --no-install-suggests -y \
 
 
 COPY . /app/
-COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 RUN cd /app/src \
     && autoscan \
@@ -43,6 +42,8 @@ RUN cd /app/src \
         make \
         zlib1g-dev \
     && apt-get autoremove -y
+
+COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 EXPOSE 80
 # CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
