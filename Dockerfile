@@ -45,5 +45,5 @@ RUN cd /app/src \
     && apt-get autoremove
 
 EXPOSE 80
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+# CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["/app/docker-entrypoint.sh"]
