@@ -33,7 +33,7 @@ RUN cd /app/src \
     && autoconf \
     && ./configure --prefix=/app  \
     && make -j $(grep -c ^processor /proc/cpuinfo) install clean \
-    && apt-get remove \
+    && apt-get remove -y \
         autoconf \
         automake \
         libexpat1-dev \
