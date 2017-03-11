@@ -42,7 +42,7 @@ RUN cd /app/src \
         m4 \
         make \
         zlib1g-dev \
-    && apt-get autoremove
+    && apt-get autoremove -y
 
 EXPOSE 80
 # CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
