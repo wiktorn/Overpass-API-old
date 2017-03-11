@@ -41,6 +41,7 @@ RUN apt-get install --no-install-recommends --no-install-suggests -y \
         supervisor \
         bash \
         lftp \
+        wget \
         bzip2
 
 COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
