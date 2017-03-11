@@ -45,6 +45,7 @@ RUN apt-get install --no-install-recommends --no-install-suggests -y \
         bzip2
 
 COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY etc/nginx-overpass.conf /etc/nginx/nginx.conf
 
 EXPOSE 80
 # CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
