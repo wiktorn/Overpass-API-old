@@ -18,7 +18,8 @@ RUN apt-get update \
 RUN apt-get install --no-install-recommends --no-install-suggests -y \
         supervisor \
         bash \
-        lftp
+        lftp \
+        bunzip2
 
 
 COPY . /app/
