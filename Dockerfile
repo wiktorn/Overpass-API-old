@@ -1,6 +1,6 @@
 FROM nginx:stable
 
-RUN addgroup overpass && adduser --homeh /db --disabled-password --in-group overpass overpass
+RUN addgroup overpass && adduser --home /db --disabled-password --ingroup overpass overpass
 
 RUN apt-get update \
     && apt-get install --no-install-recommends --no-install-suggests -y \
