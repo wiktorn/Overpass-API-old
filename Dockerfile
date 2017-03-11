@@ -24,7 +24,7 @@ RUN cd /app/src \
     && libtoolize \
     && automake --add-missing  \
     && autoconf \
-    && ./configure --prefix=/app  \
+    && CXXFLAGS='-g -O0' CFLAGS='-g -O0' ./configure --prefix=/app ./configure --prefix=/app  \
     && make -j $(grep -c ^processor /proc/cpuinfo) install clean \
     && apt-get remove -y \
         autoconf \
