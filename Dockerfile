@@ -1,21 +1,25 @@
-FROM nginx:stable-alpine
+FROM nginx:stable
 
 RUN addgroup -S overpass && adduser -D -S -h /db -s /sbin/nologin -G overpass overpass
 
-RUN apk add --no-cache --virtual .build-deps \
+RUN apt-get update \
+    && apt-get install --no-install-recommends --no-install-suggests -y \
         autoconf \
         automake \
+        expat \
         expat-dev \
         g++ \
         libtool \
         m4 \
         make \
+        zlib \
         zlib-dev
 
-RUN apk add --no-cache --virtual .run-deps \
+RUN apt-get install --no-install-recommends --no-install-suggests -y \
         supervisor \
         bash \
-        wget
+        lftp
+
 
 COPY . /app/
 COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
@@ -29,17 +33,16 @@ RUN cd /app/src \
     && autoconf \
     && ./configure --prefix=/app  \
     && make -j $(grep -c ^processor /proc/cpuinfo) install clean \
-    && runDeps="$( \
-        scanelf --needed --nobanner /app/bin/* \
-            | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
-            | sort -u \
-            | xargs -r apk info --installed \
-            | sort -u \
-    )" \
-    && apk add --no-cache --virtual .overpass-rundeps $runDeps \
-    && apk del .build-deps
-
-VOLUME /db
+    && apt-get remove \
+        autoconf \
+        automake \
+        expat-dev \
+        g++ \
+        libtool \
+        m4 \
+        make \
+        zlib-dev \
+    && apt-get autoremove
 
 EXPOSE 80
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
