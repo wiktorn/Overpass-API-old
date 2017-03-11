@@ -15,13 +15,6 @@ RUN apt-get update \
         zlib1g \
         zlib1g-dev
 
-RUN apt-get install --no-install-recommends --no-install-suggests -y \
-        supervisor \
-        bash \
-        lftp \
-        bunzip2
-
-
 COPY . /app/
 
 RUN cd /app/src \
@@ -43,6 +36,12 @@ RUN cd /app/src \
         make \
         zlib1g-dev \
     && apt-get autoremove -y
+
+RUN apt-get install --no-install-recommends --no-install-suggests -y \
+        supervisor \
+        bash \
+        lftp \
+        bzip2
 
 COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
