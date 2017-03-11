@@ -7,13 +7,13 @@ RUN apt-get update \
         autoconf \
         automake \
         expat \
-        expat-dev \
+        libexpat1-dev \
         g++ \
         libtool \
         m4 \
         make \
-        zlib \
-        zlib-dev
+        zlib1g \
+        zlib1g-dev
 
 RUN apt-get install --no-install-recommends --no-install-suggests -y \
         supervisor \
@@ -36,12 +36,12 @@ RUN cd /app/src \
     && apt-get remove \
         autoconf \
         automake \
-        expat-dev \
+        libexpat1-dev \
         g++ \
         libtool \
         m4 \
         make \
-        zlib-dev \
+        zlib1g-dev \
     && apt-get autoremove
 
 EXPOSE 80
