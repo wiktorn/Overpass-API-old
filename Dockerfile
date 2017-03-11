@@ -1,6 +1,6 @@
 FROM nginx:stable
 
-RUN addgroup -S overpass && adduser -D -S -h /db -s /sbin/nologin -G overpass overpass
+RUN addgroup overpass && adduser --homeh /db --disabled-password --in-group overpass overpass
 
 RUN apt-get update \
     && apt-get install --no-install-recommends --no-install-suggests -y \
