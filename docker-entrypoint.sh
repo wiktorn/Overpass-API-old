@@ -8,7 +8,8 @@ OVERPASS_MODE=${OVERPASS_MODE:-clone}
 if [ ! -d /db/db ] ; then
     if [ "$OVERPASS_MODE" = "clone" ]; then
         shift
-        /app/bin/download_clone.sh --db-dir=/db/db --source=http://dev.overpass-api.de/api_drolbr/ "--meta=$OVERPASS_META"
+        /app/bin/download_clone.sh --db-dir=/db/db --source=http://dev.overpass-api.de/api_drolbr/ "--meta=$OVERPASS_META" \
+        && chown -R overpass:overpass /db
     fi
 
     if [ "$OVERPASS_MODE" = "init" ]; then
