@@ -12,13 +12,13 @@ if [ ! -d /db/db ] ; then
     fi
 
     if [ "$OVERPASS_MODE" = "init" ]; then
-        lftpget -c $OVERPASS_PLANET_URL -o /db/planet
-        /app/bin/init_osm3s.sh /db/planet /db/db /app "--meta=$OVERPASS_META"
-        /app/bin/fetch_osc.sh $OVERPASS_MINUTE_ID $OVERPASS_MINUTE_URL /db/diffs
-        /app/bin/apply_osc_to_db.sh /db/db /db/diffs $OVERPASS_MINUTE_ID "--meta=$OVERPASS_META"
-        rm /db/planet
-        chown -R overpass:overpass /db
-        echo "Overpass ready, you can start you container with docker start"
+        lftpget -c $OVERPASS_PLANET_URL -o /db/planet \
+        && /app/bin/init_osm3s.sh /db/planet /db/db /app "--meta=$OVERPASS_META" \
+        && /app/bin/fetch_osc.sh $OVERPASS_MINUTE_ID $OVERPASS_MINUTE_URL /db/diffs \
+        && /app/bin/apply_osc_to_db.sh /db/db /db/diffs $OVERPASS_MINUTE_ID "--meta=$OVERPASS_META" \
+        && rm /db/planet \
+        && chown -R overpass:overpass /db \
+        && echo "Overpass ready, you can start you container with docker start"
         exit
     fi
 fi
