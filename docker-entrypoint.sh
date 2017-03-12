@@ -7,9 +7,11 @@ OVERPASS_MODE=${OVERPASS_MODE:-clone}
 
 if [ ! -d /db/db ] ; then
     if [ "$OVERPASS_MODE" = "clone" ]; then
-        /app/bin/download_clone.sh --db-dir=/db/db --source=http://dev.overpass-api.de/api_drolbr/ "--meta=$OVERPASS_META" \
+        mkdir -p /db/db \
+        && /app/bin/download_clone.sh --db-dir=/db/db --source=http://dev.overpass-api.de/api_drolbr/ "--meta=$OVERPASS_META" \
         && chown -R overpass:overpass /db \
         && echo "Overpass ready, you can start your container with docker start"
+        exit
     fi
 
     if [ "$OVERPASS_MODE" = "init" ]; then
