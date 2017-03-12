@@ -46,9 +46,10 @@ RUN apt-get install --no-install-recommends --no-install-suggests -y \
         bzip2
 
 
-RUN mkdir /nginx && chown nginx:nginx /nginx
+RUN mkdir /nginx && chown nginx:nginx /nginx && mkdir -p /db/db /db/diffs && chown -R overpass:overpass /db
 COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY etc/nginx-overpass.conf /etc/nginx/nginx.conf
+VOLUME /db
 
 EXPOSE 80
 # CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
