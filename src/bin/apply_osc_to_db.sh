@@ -31,7 +31,7 @@ if [[ ! ${EXEC_DIR:0:1} == "/" ]]; then
 
 DB_DIR=`$EXEC_DIR/dispatcher --show-dir`
 
-if [ ! -d $DB_DIR ] ; then
+if [[ ! -d $DB_DIR ]] ; then
     echo "Can't find DB_DIR. Returned value: $DB_DIR"
     exit 1;
 fi
