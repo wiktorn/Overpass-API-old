@@ -17,6 +17,7 @@ if [ ! -d /db/db ] ; then
         /app/bin/fetch_osc.sh $OVERPASS_MINUTE_ID $OVERPASS_MINUTE_URL /db/diffs
         /app/bin/apply_osc_to_db.sh /db/db /db/diffs $OVERPASS_MINUTE_ID "--meta=$OVERPASS_META"
         rm /db/planet
+        chown -R overpass:overpass /db
         echo "Overpass ready, you can start you container with docker start"
         exit
     fi
