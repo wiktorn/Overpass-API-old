@@ -14,8 +14,7 @@ if [ ! -d /db/db ] ; then
     if [ "$OVERPASS_MODE" = "init" ]; then
         lftp -c "get -c $OVERPASS_PLANET_URL -o /db/planet; exit" \
         && /app/bin/init_osm3s.sh /db/planet /db/db /app "--meta=$OVERPASS_META" \
-        && /app/bin/fetch_osc.sh $OVERPASS_MINUTE_ID $OVERPASS_MINUTE_URL /db/diffs \
-        && /app/bin/apply_osc_to_db.sh /db/db /db/diffs $OVERPASS_MINUTE_ID "--meta=$OVERPASS_META" \
+        && echo $OVERPASS_MINUTE_ID > /db/db/replicate_id
         && rm /db/planet \
         && chown -R overpass:overpass /db \
         && echo "Overpass ready, you can start you container with docker start"
