@@ -7,9 +7,9 @@ OVERPASS_MODE=${OVERPASS_MODE:-clone}
 
 if [ ! -d /db/db ] ; then
     if [ "$OVERPASS_MODE" = "clone" ]; then
-        shift
         /app/bin/download_clone.sh --db-dir=/db/db --source=http://dev.overpass-api.de/api_drolbr/ "--meta=$OVERPASS_META" \
-        && chown -R overpass:overpass /db
+        && chown -R overpass:overpass /db \
+        && echo "Overpass ready, you can start your container with docker start"
     fi
 
     if [ "$OVERPASS_MODE" = "init" ]; then
@@ -18,7 +18,7 @@ if [ ! -d /db/db ] ; then
         && echo $OVERPASS_MINUTE_ID > /db/db/replicate_id \
         && rm /db/planet \
         && chown -R overpass:overpass /db \
-        && echo "Overpass ready, you can start you container with docker start"
+        && echo "Overpass ready, you can start your container with docker start"
         exit
     fi
 fi
