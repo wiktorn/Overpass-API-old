@@ -1,19 +1,16 @@
-FROM nginx:stable
+FROM nginx:stable-alpine
 
-RUN addgroup overpass && adduser --home /db --disabled-password --ingroup overpass overpass
+RUN addgroup -S overpass && adduser -D -S -h /db -s /sbin/nologin -G overpass overpass
 
-RUN apt-get update \
-    && apt-get install --no-install-recommends --no-install-suggests -y \
+RUN apk add --no-cache --virtual .build-deps \
         autoconf \
         automake \
-        expat \
-        libexpat1-dev \
+        expat-dev \
         g++ \
         libtool \
         m4 \
         make \
-        zlib1g \
-        zlib1g-dev
+        zlib-dev
 
 COPY . /app/
 
@@ -24,27 +21,25 @@ RUN cd /app/src \
     && libtoolize \
     && automake --add-missing  \
     && autoconf \
-    && CXXFLAGS='-O2' CFLAGS='-O2' ./configure --prefix=/app \
+    && ./configure --prefix=/app  \
     && make -j $(grep -c ^processor /proc/cpuinfo) install clean \
-    && apt-get remove -y \
-        autoconf \
-        automake \
-        libexpat1-dev \
-        g++ \
-        libtool \
-        m4 \
-        make \
-        zlib1g-dev \
-    && apt-get autoremove -y
+    && runDeps="$( \
+        scanelf --needed --nobanner /app/bin/* \
+            | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
+            | sort -u \
+            | xargs -r apk info --installed \
+            | sort -u \
+    )" \
+    && apk add --no-cache --virtual .overpass-rundeps $runDeps \
+    && apk del .build-deps
 
-RUN apt-get install --no-install-recommends --no-install-suggests -y \
+RUN apk add --no-cache --virtual .run-deps \
         supervisor \
         bash \
         lftp \
-        wget \
         fcgiwrap \
-        bzip2
-
+        bzip2 \
+        wget
 
 RUN mkdir /nginx && chown nginx:nginx /nginx && mkdir -p /db/db /db/diffs && chown -R overpass:overpass /db
 COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
@@ -52,5 +47,4 @@ COPY etc/nginx-overpass.conf /etc/nginx/nginx.conf
 VOLUME /db
 
 EXPOSE 80
-# CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
 CMD ["/app/docker-entrypoint.sh"]
