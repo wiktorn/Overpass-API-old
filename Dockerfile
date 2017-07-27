@@ -9,6 +9,8 @@ RUN apt-get update \
         expat \
         libexpat1-dev \
         g++ \
+        liblz4-1 \
+        liblz4-dev \
         libtool \
         m4 \
         make \
@@ -24,7 +26,7 @@ RUN cd /app/src \
     && libtoolize \
     && automake --add-missing  \
     && autoconf \
-    && CXXFLAGS='-O2' CFLAGS='-O2' ./configure --prefix=/app \
+    && CXXFLAGS='-O2' CFLAGS='-O2' ./configure --prefix=/app --enable-lz4 \
     && make -j $(grep -c ^processor /proc/cpuinfo) install clean \
     && apt-get remove -y \
         autoconf \
@@ -32,10 +34,11 @@ RUN cd /app/src \
         libexpat1-dev \
         g++ \
         libtool \
+        liblz4-dev \
         m4 \
         make \
         zlib1g-dev \
-    && apt-get autoremove -y
+    && apt-get autoremove -y 
 
 RUN apt-get install --no-install-recommends --no-install-suggests -y \
         supervisor \
@@ -47,6 +50,7 @@ RUN apt-get install --no-install-recommends --no-install-suggests -y \
 
 
 RUN mkdir /nginx && chown nginx:nginx /nginx && mkdir -p /db/db /db/diffs && chown -R overpass:overpass /db
+COPY src/rules /db/db/rules
 COPY etc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY etc/nginx-overpass.conf /etc/nginx/nginx.conf
 VOLUME /db
