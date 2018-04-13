@@ -73,16 +73,17 @@ std::vector< TStatement* > collect_substatements(typename TStatement::Factory& s
 					    Tokenizer_Wrapper& token, Error_Output* error_output, int depth)
 {
   std::vector< TStatement* > substatements;
-  clear_until_after(token, error_output, "(");
-  while (token.good() && *token != ")")
+  clear_until_after(token, error_output, "(", "{", false);
+  if (!token.good())
+    return substatements;
+  std::string closing_token = (*token == "(" ? ")" : "}");
+  ++token;
+  while (token.good() && *token != closing_token)
   {
     TStatement* substatement = parse_statement< TStatement >
 	(stmt_factory, parsed_query, token, error_output, depth+1);
     if (substatement)
       substatements.push_back(substatement);
-    clear_until_after(token, error_output, ";", ")", false);
-    if (*token == ";")
-      ++token;
   }
   if (token.good())
     ++token;
@@ -105,9 +106,6 @@ std::vector< TStatement* > collect_substatements_and_probe
         (stmt_factory, parsed_query, token, error_output, depth+1);
     if (substatement)
       substatements.push_back(substatement);
-    clear_until_after(token, error_output, ";", ")", "-", false);
-    if (*token == ";")
-      ++token;
     if (*token == "-")
     {
       is_difference = true;
@@ -120,9 +118,6 @@ std::vector< TStatement* > collect_substatements_and_probe
 	(stmt_factory, parsed_query, token, error_output, depth+1);
     if (substatement)
       substatements.push_back(substatement);
-    clear_until_after(token, error_output, ";", ")", false);
-    if (*token == ";")
-      ++token;
     if (is_difference && *token != ")")
     {
       if (error_output)
@@ -136,9 +131,6 @@ std::vector< TStatement* > collect_substatements_and_probe
 	(stmt_factory, parsed_query, token, error_output, depth+1);
     if (substatement)
       substatements.push_back(substatement);
-    clear_until_after(token, error_output, ";", ")", false);
-    if (*token == ";")
-      ++token;
   }
   if (token.good())
     ++token;
@@ -146,7 +138,23 @@ std::vector< TStatement* > collect_substatements_and_probe
   return substatements;
 }
 
+
 //-----------------------------------------------------------------------------
+
+
+template< class TStatement >
+TStatement* parse_value_tree(typename TStatement::Factory& stmt_factory, Tokenizer_Wrapper& token,
+    Error_Output* error_output, bool parenthesis_expected,
+    Statement::QL_Context tree_context, const Statement::Return_Type_Checker& eval_type)
+{
+  Token_Tree tree(token, error_output, parenthesis_expected);
+  if (tree.tree.empty())
+    return 0;
+
+  return stmt_factory.create_evaluator(Token_Node_Ptr(tree, tree.tree[0].rhs), tree_context,
+      eval_type);
+}
+
 
 template< class TStatement >
 TStatement* create_union_statement(typename TStatement::Factory& stmt_factory,
@@ -167,13 +175,13 @@ TStatement* create_difference_statement(typename TStatement::Factory& stmt_facto
 }
 
 template< class TStatement >
-TStatement* create_foreach_statement(typename TStatement::Factory& stmt_factory,
-				     std::string from, std::string into, uint line_nr)
+TStatement* create_for_statement(typename TStatement::Factory& stmt_factory,
+				     std::string stmt_name, std::string from, std::string into, uint line_nr)
 {
   std::map< std::string, std::string > attr;
   attr["from"] = from;
   attr["into"] = into;
-  return stmt_factory.create_statement("foreach", line_nr, attr);
+  return stmt_factory.create_statement(stmt_name, line_nr, attr);
 }
 
 
@@ -189,17 +197,46 @@ TStatement* create_make_statement(typename TStatement::Factory& stmt_factory,
   return stmt_factory.create_statement(strategy, line_nr, attr);
 }
 
+
 template< class TStatement >
-TStatement* create_filter_statement(typename TStatement::Factory& stmt_factory, uint line_nr)
+TStatement* create_complete_statement(typename TStatement::Factory& stmt_factory,
+    std::string maxnum, std::string from, std::string into, uint line_nr)
 {
   std::map< std::string, std::string > attr;
-  return stmt_factory.create_statement("filter", line_nr, attr);
+  attr["maxnum"] = maxnum;
+  attr["from"] = from;
+  attr["into"] = into;
+  return stmt_factory.create_statement("complete", line_nr, attr);
+}
+
+
+template< class TStatement >
+TStatement* create_if_statement(typename TStatement::Factory& stmt_factory, uint line_nr)
+{
+  std::map< std::string, std::string > attr;
+  return stmt_factory.create_statement("if", line_nr, attr);
+}
+
+
+template< class TStatement >
+TStatement* create_else_statement(typename TStatement::Factory& stmt_factory, uint line_nr)
+{
+  std::map< std::string, std::string > attr;
+  return stmt_factory.create_statement("else", line_nr, attr);
+}
+
+
+template< class TStatement >
+TStatement* create_retro_statement(typename TStatement::Factory& stmt_factory, uint line_nr)
+{
+  std::map< std::string, std::string > attr;
+  return stmt_factory.create_statement("retro", line_nr, attr);
 }
 
 
 template< class TStatement >
 TStatement* create_print_statement(typename TStatement::Factory& stmt_factory,
-                                   std::string from, std::string mode, std::string order, std::string limit, std::string geometry,
+                                   std::string from, std::string mode, std::string order, std::string limit, std::string geometry, std::string show_ids,
                                    std::string south, std::string north, std::string west, std::string east,
                                   uint line_nr)
 {
@@ -209,6 +246,7 @@ TStatement* create_print_statement(typename TStatement::Factory& stmt_factory,
   attr["order"] = order;
   attr["limit"] = limit;
   attr["geometry"] = geometry;
+  attr["ids"] = show_ids;
   attr["s"] = south;
   attr["n"] = north;
   attr["w"] = west;
@@ -216,9 +254,34 @@ TStatement* create_print_statement(typename TStatement::Factory& stmt_factory,
   return stmt_factory.create_statement("print", line_nr, attr);
 }
 
+
+template< class TStatement >
+TStatement* create_timeline_statement(typename TStatement::Factory& stmt_factory, uint line_nr,
+    const std::string& type, const std::string& ref, const std::string& version, const std::string& into)
+{
+  std::map< std::string, std::string > attr;
+  attr["type"] = type;
+  attr["ref"] = ref;
+  attr["version"] = version;
+  attr["into"] = into;
+  return stmt_factory.create_statement("timeline", line_nr, attr);
+}
+
+
+template< class TStatement >
+TStatement* create_compare_statement(typename TStatement::Factory& stmt_factory, uint line_nr,
+    const std::string& from, const std::string& into)
+{
+  std::map< std::string, std::string > attr;
+  attr["from"] = (from == "" ? "_" : from);
+  attr["into"] = into;
+  return stmt_factory.create_statement("compare", line_nr, attr);
+}
+
+
 template< class TStatement >
 TStatement* create_query_statement(typename TStatement::Factory& stmt_factory,
-				   std::string type, std::string into, uint line_nr)
+    std::string type, std::string into, uint line_nr)
 {
   std::map< std::string, std::string > attr;
   attr["type"] = type;
@@ -226,12 +289,13 @@ TStatement* create_query_statement(typename TStatement::Factory& stmt_factory,
   return stmt_factory.create_statement("query", line_nr, attr);
 }
 
+
 typedef enum { haskv_plain, haskv_regex, haskv_icase } haskv_type;
+
 
 template< class TStatement >
 TStatement* create_has_kv_statement(typename TStatement::Factory& stmt_factory,
-				    std::string key, std::string value, haskv_type regex, haskv_type key_regex, bool straight,
-				    uint line_nr)
+    std::string key, std::string value, haskv_type regex, haskv_type key_regex, bool straight, uint line_nr)
 {
   std::map< std::string, std::string > attr;
 
@@ -254,67 +318,21 @@ TStatement* create_has_kv_statement(typename TStatement::Factory& stmt_factory,
   return stmt_factory.create_statement("has-kv", line_nr, attr);
 }
 
-template< class TStatement >
-TStatement* create_id_query_statement(typename TStatement::Factory& stmt_factory,
-    std::string type, const std::vector< std::string >& ref, std::string into, uint line_nr)
-{
-  std::map< std::string, std::string > attr;
-
-  attr["type"] = type;
-  attr["into"] = into;
-
-  for (uint i = 0; i < ref.size(); ++i)
-  {
-    std::stringstream id;
-    if (i == 0)
-      id << "ref";
-    else
-      id << "ref_" << i;
-    attr[id.str()] = ref[i];
-  }
-
-  return stmt_factory.create_statement("id-query", line_nr, attr);
-}
 
 template< class TStatement >
 TStatement* create_item_statement(typename TStatement::Factory& stmt_factory,
-				  std::string from, uint line_nr)
-{
-  std::map< std::string, std::string > attr;
-  attr["set"] = from;
-  return stmt_factory.create_statement("item", line_nr, attr);
-}
-
-template< class TStatement >
-TStatement* create_bbox_statement(typename TStatement::Factory& stmt_factory,
-  std::string south, std::string north, std::string west, std::string east, std::string into, uint line_nr)
-{
-  std::map< std::string, std::string > attr;
-  attr["s"] = south;
-  attr["n"] = north;
-  attr["w"] = west;
-  attr["e"] = east;
-  attr["into"] = into;
-  return stmt_factory.create_statement("bbox-query", line_nr, attr);
-}
-
-template< class TStatement >
-TStatement* create_around_statement(typename TStatement::Factory& stmt_factory,
-				    std::string radius, std::string lat, std::string lon,
-                                    std::string from, std::string into, uint line_nr)
+    std::string from, std::string into, uint line_nr)
 {
   std::map< std::string, std::string > attr;
   attr["from"] = from;
   attr["into"] = into;
-  attr["radius"] = radius;
-  attr["lat"] = lat;
-  attr["lon"] = lon;
-  return stmt_factory.create_statement("around", line_nr, attr);
+  return stmt_factory.create_statement("item", line_nr, attr);
 }
+
 
 template< class TStatement >
 TStatement* create_recurse_statement(typename TStatement::Factory& stmt_factory,
-				     std::string type, std::string from, std::string into, uint line_nr)
+     std::string type, std::string from, std::string into, uint line_nr)
 {
   std::map< std::string, std::string > attr;
   attr["from"] = (from == "" ? "_" : from);
@@ -323,93 +341,10 @@ TStatement* create_recurse_statement(typename TStatement::Factory& stmt_factory,
   return stmt_factory.create_statement("recurse", line_nr, attr);
 }
 
-template< class TStatement >
-TStatement* create_recurse_statement(typename TStatement::Factory& stmt_factory,
-                                     std::string type, std::string from, std::string role, std::string into, uint line_nr)
-{
-  std::map< std::string, std::string > attr;
-  attr["from"] = (from == "" ? "_" : from);
-  attr["into"] = into;
-  attr["type"] = type;
-  attr["role"] = role;
-  attr["role-restricted"] = "yes";
-  return stmt_factory.create_statement("recurse", line_nr, attr);
-}
-
-template< class TStatement >
-TStatement* create_polygon_statement(typename TStatement::Factory& stmt_factory,
-				   std::string bounds, std::string into, uint line_nr)
-{
-  std::map< std::string, std::string > attr;
-  attr["bounds"] = bounds;
-  attr["into"] = into;
-  return stmt_factory.create_statement("polygon-query", line_nr, attr);
-}
-
-template< class TStatement >
-TStatement* create_user_statement
-    (typename TStatement::Factory& stmt_factory,
-     std::string type, std::vector< std::string > name, std::vector< std::string > uid, std::string into, uint line_nr)
-{
-  std::map< std::string, std::string > attr;
-  std::vector< std::string >::iterator it;
-  int i;
-
-  attr["into"] = into;
-
-  if (uid.empty())
-    attr["uid"] = "";
-
-  if (name.empty())
-    attr["name"] = "";
-
-  for(it = name.begin(), i = 0; it != name.end(); ++it, ++i)
-  {
-    std::stringstream id;
-    if (i == 0)
-      id << "name";
-    else
-      id << "name_" << i;
-    attr[id.str()] = *it;
-  }
-
-  for(it = uid.begin(), i = 0; it != uid.end(); ++it, ++i)
-  {
-    std::stringstream id;
-    if (i == 0)
-      id << "uid";
-    else
-      id << "uid_" << i;
-    attr[id.str()] = *it;
-  }
-
-  attr["type"] = type;
-  return stmt_factory.create_statement("user", line_nr, attr);
-}
-
-template< class TStatement >
-TStatement* create_newer_statement(typename TStatement::Factory& stmt_factory,
-				   std::string than, uint line_nr)
-{
-  std::map< std::string, std::string > attr;
-  attr["than"] = than;
-  return stmt_factory.create_statement("newer", line_nr, attr);
-}
-
-template< class TStatement >
-TStatement* create_area_statement(typename TStatement::Factory& stmt_factory,
-				   std::string ref, std::string from, std::string into, uint line_nr)
-{
-  std::map< std::string, std::string > attr;
-  attr["from"] = (from == "" ? "_" : from);
-  attr["into"] = into;
-  attr["ref"] = ref;
-  return stmt_factory.create_statement("area-query", line_nr, attr);
-}
 
 template< class TStatement >
 TStatement* create_coord_query_statement(typename TStatement::Factory& stmt_factory,
-				     std::string lat, std::string lon, std::string from, std::string into, uint line_nr)
+    std::string lat, std::string lon, std::string from, std::string into, uint line_nr)
 {
   std::map< std::string, std::string > attr;
   attr["from"] = (from == "" ? "_" : from);
@@ -419,9 +354,10 @@ TStatement* create_coord_query_statement(typename TStatement::Factory& stmt_fact
   return stmt_factory.create_statement("coord-query", line_nr, attr);
 }
 
+
 template< class TStatement >
 TStatement* create_map_to_area_statement(typename TStatement::Factory& stmt_factory,
-				     std::string from, std::string into, uint line_nr)
+    std::string from, std::string into, uint line_nr)
 {
   std::map< std::string, std::string > attr;
   attr["from"] = (from == "" ? "_" : from);
@@ -429,26 +365,23 @@ TStatement* create_map_to_area_statement(typename TStatement::Factory& stmt_fact
   return stmt_factory.create_statement("map-to-area", line_nr, attr);
 }
 
+
 template< class TStatement >
-TStatement* create_pivot_statement(typename TStatement::Factory& stmt_factory,
-                                   std::string from, std::string into, uint line_nr)
+TStatement* create_localize_statement(typename TStatement::Factory& stmt_factory,
+    std::string type, std::string from, std::string into,
+    std::string south, std::string north, std::string west, std::string east, uint line_nr)
 {
   std::map< std::string, std::string > attr;
   attr["from"] = (from == "" ? "_" : from);
   attr["into"] = into;
-  return stmt_factory.create_statement("pivot", line_nr, attr);
+  attr["type"] = type;
+  attr["s"] = south;
+  attr["n"] = north;
+  attr["w"] = west;
+  attr["e"] = east;
+  return stmt_factory.create_statement("localize", line_nr, attr);
 }
 
-template< class TStatement >
-TStatement* create_changed_statement(typename TStatement::Factory& stmt_factory,
-				   std::string since, std::string until, std::string into, uint line_nr)
-{
-  std::map< std::string, std::string > attr;
-  attr["since"] = since;
-  attr["until"] = until;
-  attr["into"] = into;
-  return stmt_factory.create_statement("changed", line_nr, attr);
-}
 
 //-----------------------------------------------------------------------------
 
@@ -464,7 +397,7 @@ std::vector< std::string > parse_setup(Tokenizer_Wrapper& token,
   {
     Output_Handler_Parser* format_parser =
 	Output_Handler_Parser::get_format_parser(result.back());
-	
+
     if (!format_parser)
     {
       if (error_output)
@@ -521,6 +454,7 @@ std::vector< std::string > parse_setup(Tokenizer_Wrapper& token,
   return result;
 }
 
+
 template< class TStatement >
 TStatement* parse_union(typename TStatement::Factory& stmt_factory, Parsed_Query& parsed_query,
 			Tokenizer_Wrapper& token, Error_Output* error_output, int depth)
@@ -532,24 +466,20 @@ TStatement* parse_union(typename TStatement::Factory& stmt_factory, Parsed_Query
       collect_substatements_and_probe< TStatement >(stmt_factory, parsed_query, token, error_output,
 						    is_difference, depth+1);
   std::string into = probe_into(token, error_output);
+  clear_until_after(token, error_output, ";");
 
+  TStatement* statement = 0;
   if (is_difference)
-  {
-    TStatement* statement = create_difference_statement< TStatement >(stmt_factory, into, line_col.first);
-    for (typename std::vector< TStatement* >::const_iterator it = substatements.begin();
-        it != substatements.end(); ++it)
-      statement->add_statement(*it, "");
-    return statement;
-  }
+    statement = create_difference_statement< TStatement >(stmt_factory, into, line_col.first);
   else
-  {
-    TStatement* statement = create_union_statement< TStatement >(stmt_factory, into, line_col.first);
-    for (typename std::vector< TStatement* >::const_iterator it = substatements.begin();
-        it != substatements.end(); ++it)
-      statement->add_statement(*it, "");
-    return statement;
-  }
+    statement = create_union_statement< TStatement >(stmt_factory, into, line_col.first);
+
+  for (typename std::vector< TStatement* >::const_iterator it = substatements.begin();
+      it != substatements.end(); ++it)
+    statement->add_statement(*it, "");
+  return statement;
 }
+
 
 template< class TStatement >
 TStatement* parse_foreach(typename TStatement::Factory& stmt_factory, Parsed_Query& parsed_query,
@@ -562,14 +492,225 @@ TStatement* parse_foreach(typename TStatement::Factory& stmt_factory, Parsed_Que
   std::string into = probe_into(token, error_output);
   std::vector< TStatement* > substatements =
       collect_substatements< TStatement >(stmt_factory, parsed_query, token, error_output, depth+1);
+  if (*token == ";")
+    ++token;
 
-  TStatement* statement = create_foreach_statement< TStatement >
-      (stmt_factory, from, into, line_col.first);
+  TStatement* statement = create_for_statement< TStatement >
+      (stmt_factory, "foreach", from, into, line_col.first);
   for (typename std::vector< TStatement* >::const_iterator it = substatements.begin();
       it != substatements.end(); ++it)
     statement->add_statement(*it, "");
   return statement;
 }
+
+
+struct For_Stmt_Return_Type_Checker : Statement::Return_Type_Checker
+{
+  For_Stmt_Return_Type_Checker() {}
+
+  virtual bool eval_required() const { return true; }
+  virtual bool matches(Statement::Eval_Return_Type eval_type) const
+  { return eval_type == Statement::string || eval_type == Statement::container; }
+  virtual std::string expectation() const
+  { return Statement::eval_to_string(Statement::string) + " or " + Statement::eval_to_string(Statement::container); }
+};
+
+
+template< class TStatement >
+TStatement* parse_for(typename TStatement::Factory& stmt_factory, Parsed_Query& parsed_query,
+			  Tokenizer_Wrapper& token, Error_Output* error_output, int depth)
+{
+  std::pair< uint, uint > line_col = token.line_col();
+  ++token;
+
+  std::string from = probe_from(token, error_output);
+  std::string into = probe_into(token, error_output);
+
+  clear_until_after(token, error_output, "(");
+  TStatement* condition = parse_value_tree< TStatement >(stmt_factory, token, error_output, true,
+      Statement::elem_eval_possible, For_Stmt_Return_Type_Checker());
+  clear_until_after(token, error_output, ")");
+  std::vector< TStatement* > substatements =
+      collect_substatements< TStatement >(stmt_factory, parsed_query, token, error_output, depth+1);
+  if (*token == ";")
+    ++token;
+
+  TStatement* statement = create_for_statement< TStatement >
+      (stmt_factory, "for", from, into, line_col.first);
+  statement->add_statement(condition, "");
+  for (typename std::vector< TStatement* >::const_iterator it = substatements.begin();
+      it != substatements.end(); ++it)
+    statement->add_statement(*it, "");
+  return statement;
+}
+
+
+template< class TStatement >
+TStatement* parse_complete(typename TStatement::Factory& stmt_factory, Parsed_Query& parsed_query,
+              Tokenizer_Wrapper& token, Error_Output* error_output, int depth)
+{
+  std::pair< uint, uint > line_col = token.line_col();
+  ++token;
+  std::string maxnum;
+  if (*token == "(")
+  {
+    ++token;
+    maxnum = get_text_token(token, error_output, "maximum loop number");
+    clear_until_after(token, error_output, ")");
+  }
+  std::string from = probe_from(token, error_output);
+  std::string into = probe_into(token, error_output);
+  std::vector< TStatement* > substatements =
+      collect_substatements< TStatement >(stmt_factory, parsed_query, token, error_output, depth);
+  if (*token == ";")
+    ++token;
+
+  TStatement* statement = create_complete_statement< TStatement >
+      (stmt_factory, maxnum, from, into, line_col.first);
+  for (typename std::vector< TStatement* >::const_iterator it = substatements.begin();
+      it != substatements.end(); ++it)
+    statement->add_statement(*it, "");
+  return statement;
+}
+
+
+template< class TStatement >
+TStatement* parse_if(typename TStatement::Factory& stmt_factory, Parsed_Query& parsed_query,
+              Tokenizer_Wrapper& token, Error_Output* error_output, int depth)
+{
+  std::pair< uint, uint > line_col = token.line_col();
+  ++token;
+
+  clear_until_after(token, error_output, "(");
+  TStatement* condition = parse_value_tree< TStatement >(stmt_factory, token, error_output, true,
+      Statement::evaluator_expected, Statement::Single_Return_Type_Checker(Statement::string));
+  clear_until_after(token, error_output, ")");
+  std::vector< TStatement* > substatements =
+      collect_substatements< TStatement >(stmt_factory, parsed_query, token, error_output, depth);
+  std::vector< TStatement* > else_statements;
+  if (token.good() && *token == "else")
+  {
+    ++token;
+    collect_substatements< TStatement >(stmt_factory, parsed_query, token, error_output, depth)
+        .swap(else_statements);
+  }
+  if (*token == ";")
+    ++token;
+
+  TStatement* statement = create_if_statement< TStatement >(stmt_factory, line_col.first);
+  if (condition)
+    statement->add_statement(condition, "");
+  for (typename std::vector< TStatement* >::const_iterator it = substatements.begin();
+      it != substatements.end(); ++it)
+    statement->add_statement(*it, "");
+  if (!else_statements.empty())
+    statement->add_statement(create_else_statement< TStatement >(stmt_factory, line_col.first), "");
+  for (typename std::vector< TStatement* >::const_iterator it = else_statements.begin();
+      it != else_statements.end(); ++it)
+    statement->add_statement(*it, "");
+  return statement;
+}
+
+
+template< class TStatement >
+TStatement* parse_retro(typename TStatement::Factory& stmt_factory, Parsed_Query& parsed_query,
+              Tokenizer_Wrapper& token, Error_Output* error_output, int depth)
+{
+  std::pair< uint, uint > line_col = token.line_col();
+  ++token;
+
+  clear_until_after(token, error_output, "(");
+  TStatement* condition = parse_value_tree< TStatement >(stmt_factory, token, error_output, true,
+      Statement::evaluator_expected, Statement::Single_Return_Type_Checker(Statement::string));
+  clear_until_after(token, error_output, ")");
+  std::vector< TStatement* > substatements =
+      collect_substatements< TStatement >(stmt_factory, parsed_query, token, error_output, depth);
+  if (*token == ";")
+    ++token;
+
+  TStatement* statement = create_retro_statement< TStatement >(stmt_factory, line_col.first);
+  if (condition)
+    statement->add_statement(condition, "");
+  for (typename std::vector< TStatement* >::const_iterator it = substatements.begin();
+      it != substatements.end(); ++it)
+    statement->add_statement(*it, "");
+  return statement;
+}
+
+
+template< class TStatement >
+TStatement* parse_timeline(typename TStatement::Factory& stmt_factory,
+              Tokenizer_Wrapper& token, Error_Output* error_output)
+{
+  std::pair< uint, uint > line_col = token.line_col();
+  ++token;
+
+  clear_until_after(token, error_output, "(");
+  std::string type = get_text_token(token, error_output, "OSM base type");
+  if (type == "rel")
+    type = "relation";
+
+  clear_until_after(token, error_output, ",");
+  std::string ref = get_text_token(token, error_output, "OSM element id");
+  clear_until_after(token, error_output, ",", ")", false);
+  std::string version;
+  if (*token == ",")
+  {
+    ++token;
+    version = get_text_token(token, error_output, "Number");
+  }
+  clear_until_after(token, error_output, ")");
+
+  std::string into = probe_into(token, error_output);
+  clear_until_after(token, error_output, ";");
+
+  return create_timeline_statement< TStatement >(stmt_factory, line_col.first, type, ref, version, into);
+}
+
+
+template< class TStatement >
+TStatement* parse_compare(typename TStatement::Factory& stmt_factory, Parsed_Query& parsed_query,
+    Tokenizer_Wrapper& token, const std::string& from, Error_Output* error_output, int depth)
+{
+  std::pair< uint, uint > line_col = token.line_col();
+  ++token;
+
+  TStatement* condition = 0;
+  if (*token == "(")
+  {
+    clear_until_after(token, error_output, "(");
+    if (*token == "delta")
+    {
+      clear_until_after(token, error_output, "delta");
+      clear_until_after(token, error_output, ":");
+      condition = parse_value_tree< TStatement >(stmt_factory, token, error_output, true,
+          Statement::elem_eval_possible, Statement::Single_Return_Type_Checker(Statement::string));
+    }
+    clear_until_after(token, error_output, ")");
+  }
+  std::string into = probe_into(token, error_output);
+
+  std::vector< TStatement* > substatements;
+  if (*token == "(" || *token == "{")
+  {
+    collect_substatements< TStatement >(stmt_factory, parsed_query, token, error_output, depth)
+        .swap(substatements);
+    if (*token == ";")
+      ++token;
+  }
+  else
+    clear_until_after(token, error_output, ";");
+
+  TStatement* statement = create_compare_statement< TStatement >(stmt_factory, line_col.first, from, into);
+  if (condition)
+    statement->add_statement(condition, "");
+  for (typename std::vector< TStatement* >::const_iterator it = substatements.begin();
+      it != substatements.end(); ++it)
+    statement->add_statement(*it, "");
+
+  return statement;
+}
+
 
 template< class TStatement >
 TStatement* parse_output(typename TStatement::Factory& stmt_factory,
@@ -583,6 +724,7 @@ TStatement* parse_output(typename TStatement::Factory& stmt_factory,
     std::string order = "id";
     std::string limit = "";
     std::string geometry = "skeleton";
+    std::string show_ids = "yes";
     std::string south = "";
     std::string north = "";
     std::string west = "";
@@ -613,6 +755,8 @@ TStatement* parse_output(typename TStatement::Factory& stmt_factory,
         geometry = "bounds";
       else if (*token == "center")
         geometry = "center";
+      else if (*token == "noids")
+        show_ids = "no";
       else if (isdigit((*token)[0]))
 	limit = *token;
       else if (*token == "(")
@@ -639,7 +783,7 @@ TStatement* parse_output(typename TStatement::Factory& stmt_factory,
     if (statement == 0)
     {
       statement = create_print_statement< TStatement >
-          (stmt_factory, from == "" ? "_" : from, mode, order, limit, geometry,
+          (stmt_factory, from == "" ? "_" : from, mode, order, limit, geometry, show_ids,
            south, north, west, east,
            token.line_col().first);
     }
@@ -650,21 +794,20 @@ TStatement* parse_output(typename TStatement::Factory& stmt_factory,
 				      token.line_col().first);
     }
   }
+  clear_until_after(token, error_output, ";");
 
   return statement;
 }
 
 
-template< class TStatement >
-TStatement* parse_value_tree(typename TStatement::Factory& stmt_factory, Tokenizer_Wrapper& token,
-    Error_Output* error_output, Statement::QL_Context tree_context, bool parenthesis_expected)
+struct No_Return_Type_Checker : Statement::Return_Type_Checker
 {
-  Token_Tree tree(token, error_output, parenthesis_expected);
-  if (tree.tree.empty())
-    return 0;
+  No_Return_Type_Checker() {}
 
-  return stmt_factory.create_statement(Token_Node_Ptr(tree, tree.tree[0].rhs), tree_context);
-}
+  virtual bool eval_required() const { return false; }
+  virtual bool matches(Statement::Eval_Return_Type eval_type) const { return false; }
+  virtual std::string expectation() const { return Statement::eval_to_string(Statement::non_evaluator); }
+};
 
 
 template< class TStatement >
@@ -680,19 +823,31 @@ TStatement* parse_make(typename TStatement::Factory& stmt_factory, const std::st
     if (*token != ";")
       type = get_identifier_token(token, error_output, "Element class name");
 
-    while (token.good() && *token != ";" && *token != "->")
+    Token_Tree tree(token, error_output, false);
+    if (tree.tree.size() > 1)
     {
-      if (*token == ",")
-        ++token;
+      Statement::QL_Context tree_context = (strategy == "convert" ? Statement::in_convert : Statement::generic);
+      Token_Node_Ptr tree_it(tree, tree.tree[0].rhs);
 
-      if (token.good())
+      while (tree_it->token == ",")
       {
-        TStatement* stmt = parse_value_tree< TStatement >(stmt_factory, token, error_output,
-            strategy == "convert" ? Statement::in_convert : Statement::generic, false);
-        if (stmt)
-          evaluators.push_back(stmt);
+        if (tree_it->rhs)
+        {
+          TStatement* stmt = stmt_factory.create_evaluator(tree_it.rhs(), tree_context, No_Return_Type_Checker());
+          if (stmt)
+            evaluators.push_back(stmt);
+        }
+
+        tree_it = tree_it.lhs();
       }
+
+      TStatement* stmt = stmt_factory.create_evaluator(tree_it, tree_context, No_Return_Type_Checker());
+      if (stmt)
+        evaluators.push_back(stmt);
+
+      std::reverse(evaluators.begin(),evaluators.end());
     }
+
     std::string into = probe_into(token, error_output);
 
     statement = create_make_statement< TStatement >(stmt_factory, strategy, from, into, type, token.line_col().first);
@@ -702,81 +857,59 @@ TStatement* parse_make(typename TStatement::Factory& stmt_factory, const std::st
         statement->add_statement(*it, "");
     }
   }
+  clear_until_after(token, error_output, ";");
 
   return statement;
 }
 
 
-std::string determine_recurse_type(std::string flag, std::string type, Error_Output* error_output,
-			      const std::pair< uint, uint >& line_col)
+template< class TStatement >
+TStatement* parse_localize(typename TStatement::Factory& stmt_factory,
+    Tokenizer_Wrapper& token, const std::string& from, Error_Output* error_output)
 {
-  std::string recurse_type;
-  if (flag == "r")
-  {
-    if (type == "node")
-      recurse_type = "relation-node";
-    else if (type == "way")
-      recurse_type = "relation-way";
-    else if (type == "relation")
-      recurse_type = "relation-relation";
-  }
-  else if (flag == "w")
-  {
-    if (type == "node")
-      recurse_type = "way-node";
-    else
-    {
-      if (error_output)
-	error_output->add_parse_error("A recursion from type 'w' produces nodes.",
-				      line_col.first);
-    }
-  }
-  else if (flag == "bn")
-  {
-    if (type == "node")
-    {
-      if (error_output)
-	error_output->add_parse_error("A recursion from type 'bn' produces ways or relations.",
-				      line_col.first);
-    }
-    else if (type == "way")
-      recurse_type = "node-way";
-    else if (type == "relation")
-      recurse_type = "node-relation";
-  }
-  else if (flag == "bw")
-  {
-    if (type == "node" || type == "way")
-    {
-      if (error_output)
-	error_output->add_parse_error("A recursion from type 'bw' produces relations.",
-				      line_col.first);
-    }
-    else if (type == "relation")
-      recurse_type = "way-relation";
-  }
-  else if (flag == "br")
-  {
-    if (type == "node" || type == "way")
-    {
-      if (error_output)
-	error_output->add_parse_error("A recursion from type 'br' produces relations.",
-				      line_col.first);
-    }
-    else if (type == "relation")
-      recurse_type = "relation-backwards";
-  }
-  else if (flag == ">")
-    recurse_type = "down";
-  else if (flag == ">>")
-    recurse_type = "down-rel";
-  else if (flag == "<")
-    recurse_type = "up";
-  else if (flag == "<<")
-    recurse_type = "up-rel";
+  uint line_col = token.line_col().first;
+  ++token;
 
-  return recurse_type;
+  std::string type = "l";
+  if (*token != ";" && *token != "->" && *token != "(")
+  {
+    type = *token;
+    ++token;
+  }
+  std::string south, north, west, east;
+  if (*token == "(")
+  {
+    ++token;
+    south = get_text_token(token, error_output, "Value");
+    clear_until_after(token, error_output, ",", ")", false);
+    if (*token == ",")
+    {
+      ++token;
+      west = get_text_token(token, error_output, "Value");
+      clear_until_after(token, error_output, ",", ")", false);
+    }
+    if (*token == ",")
+    {
+      ++token;
+      north = get_text_token(token, error_output, "Value");
+      clear_until_after(token, error_output, ",", ")", false);
+    }
+    if (*token == ",")
+    {
+      ++token;
+      east = get_text_token(token, error_output, "Value");
+      clear_until_after(token, error_output, ",", ")", false);
+    }
+    ++token;
+  }
+
+  std::string into = probe_into(token, error_output);
+  clear_until_after(token, error_output, ";");
+
+  return create_localize_statement< TStatement >(stmt_factory, type, from, into,
+      south, north, west, east, line_col);
 }
+
 
 struct Statement_Text
 {
@@ -815,56 +948,9 @@ TStatement* create_query_substatement
     return create_has_kv_statement< TStatement >
         (stmt_factory, clause.attributes[0], clause.attributes[1], haskv_regex, haskv_regex,
 	 (clause.attributes[2] == ""), clause.line_col.first);
-  else if (clause.statement == "around")
-    return create_around_statement< TStatement >
-        (stmt_factory, clause.attributes[1], clause.attributes[2], clause.attributes[3],
-         clause.attributes[0], into, clause.line_col.first);
-  else if (clause.statement == "polygon")
-    return create_polygon_statement< TStatement >
-        (stmt_factory, clause.attributes[0], into, clause.line_col.first);
-  else if (clause.statement == "user")
-    return create_user_statement< TStatement >
-        (stmt_factory, type, clause.attributes, std::vector<std::string>(), into, clause.line_col.first);
-  else if (clause.statement == "uid")
-    return create_user_statement< TStatement >
-        (stmt_factory, type, std::vector<std::string>(), clause.attributes, into, clause.line_col.first);
-  else if (clause.statement == "newer")
-    return create_newer_statement< TStatement >
-        (stmt_factory, clause.attributes[0], clause.line_col.first);
-  else if (clause.statement == "recurse")
-  {
-    if (clause.attributes.size() == 2)
-      return create_recurse_statement< TStatement >
-          (stmt_factory,
-	   determine_recurse_type(clause.attributes[0], type, error_output, clause.line_col),
-	   clause.attributes[1], into, clause.line_col.first);
-    else
-      return create_recurse_statement< TStatement >
-          (stmt_factory,
-           determine_recurse_type(clause.attributes[0], type, error_output, clause.line_col),
-           clause.attributes[1], clause.attributes[2], into, clause.line_col.first);
-  }
-  else if (clause.statement == "id-query")
-    return create_id_query_statement< TStatement >
-        (stmt_factory, type, clause.attributes, into, clause.line_col.first);
-  else if (clause.statement == "bbox-query")
-    return create_bbox_statement< TStatement >
-        (stmt_factory,
-	 clause.attributes[0], clause.attributes[2], clause.attributes[1], clause.attributes[3],
-	 into, clause.line_col.first);
-  else if (clause.statement == "area")
-    return create_area_statement< TStatement >
-        (stmt_factory, clause.attributes.size() <= 1 ? "" : clause.attributes[1],
-	 clause.attributes[0], into, clause.line_col.first);
-  else if (clause.statement == "pivot")
-    return create_pivot_statement< TStatement >
-        (stmt_factory, clause.attributes[0], into, clause.line_col.first);
   else if (clause.statement == "item")
     return create_item_statement< TStatement >
-        (stmt_factory, clause.attributes[0], clause.line_col.first);
-  else if (clause.statement == "changed")
-    return create_changed_statement< TStatement >
-        (stmt_factory, clause.attributes[0], clause.attributes[1], into, clause.line_col.first);
+        (stmt_factory, clause.attributes[0], "_", clause.line_col.first);
   return 0;
 }
 
@@ -876,6 +962,7 @@ TStatement* parse_full_recurse(typename TStatement::Factory& stmt_factory,
   uint line_col = token.line_col().first;
   ++token;
   std::string into = probe_into(token, error_output);
+  clear_until_after(token, error_output, ";");
 
   if (type == ">")
     return create_recurse_statement< TStatement >(stmt_factory, "down", from, into, line_col);
@@ -912,6 +999,7 @@ TStatement* parse_coord_query(typename TStatement::Factory& stmt_factory,
     ++token;
   }
   std::string into = probe_into(token, error_output);
+  clear_until_after(token, error_output, ";");
 
   return create_coord_query_statement< TStatement >(stmt_factory, lat, lon, from, into, line_col);
 }
@@ -925,6 +1013,7 @@ TStatement* parse_map_to_area(typename TStatement::Factory& stmt_factory,
   ++token;
 
   std::string into = probe_into(token, error_output);
+  clear_until_after(token, error_output, ";");
 
   return create_map_to_area_statement< TStatement >(stmt_factory, from, into, line_col);
 }
@@ -938,7 +1027,7 @@ TStatement* parse_query(typename TStatement::Factory& stmt_factory, Parsed_Query
   std::pair< uint, uint > query_line_col = token.line_col();
 
   std::vector< Statement_Text > clauses;
-  std::vector< TStatement* > value_stmts;
+  std::vector< Token_Tree > subtrees;
   while (token.good() && (*token == "[" || *token == "(" || *token == "."))
   {
     if (*token == "[")
@@ -979,7 +1068,7 @@ TStatement* parse_query(typename TStatement::Factory& stmt_factory, Parsed_Query
 	  error_output->add_parse_error(
 	      "A regular expression for a key can only be combined with a regular expression as value criterion",
 	      token.line_col().first);
-	
+
 	Statement_Text clause("has-kv", token.line_col());
 	clause.attributes.push_back(key);
 	clause.attributes.push_back("");
@@ -993,7 +1082,7 @@ TStatement* parse_query(typename TStatement::Factory& stmt_factory, Parsed_Query
 	  error_output->add_parse_error(
 	      "A regular expression for a key can only be combined with a regular expression as value criterion",
 	      token.line_col().first);
-	
+
 	straight = (*token == "=");
 	++token;
 	if (token.good() && *token == "]")
@@ -1061,217 +1150,8 @@ TStatement* parse_query(typename TStatement::Factory& stmt_factory, Parsed_Query
 	break;
       }
 
-      if (*token == "around")
-      {
-	Statement_Text clause("around", token.line_col());
-	++token;
-	clause.attributes.push_back(probe_from(token, error_output));
-	clear_until_after(token, error_output, ":");
-	clause.attributes.push_back(get_text_token(token, error_output, "Floating point number"));
-	clear_until_after(token, error_output, ",", ")", false);
-        if (*token == ",")
-        {
-          ++token;
-          clause.attributes.push_back(get_text_token(token, error_output, "Floating point number"));
-          clear_until_after(token, error_output, ",");
-          clause.attributes.push_back(get_text_token(token, error_output, "Floating point number"));
-        }
-        else
-        {
-          clause.attributes.push_back("");
-          clause.attributes.push_back("");
-        }
-	clauses.push_back(clause);
-        clear_until_after(token, error_output, ")");
-      }
-      else if (*token == "poly")
-      {
-	Statement_Text clause("polygon", token.line_col());
-	++token;
-	clear_until_after(token, error_output, ":");
-	clause.attributes.push_back(get_text_token(token, error_output, "list of coordinates"));
-	clear_until_after(token, error_output, ")");
-	clauses.push_back(clause);
-      }
-      else if (*token == "user")
-      {
-	Statement_Text clause("user", token.line_col());
-	++token;
-	clear_until_after(token, error_output, ":", false);
-        if (*token == ":")
-	{
-	  do
-	  {
-	    ++token;
-	    clause.attributes.push_back(get_text_token(token, error_output, "User name"));
-	    clear_until_after(token, error_output, ",", ")", false);
-	  } while (token.good() && *token == ",");
-
-          clear_until_after(token, error_output, ")");
-        }
-	clauses.push_back(clause);
-      }
-      else if (*token == "uid")
-      {
-	Statement_Text clause("uid", token.line_col());
-	++token;
-	clear_until_after(token, error_output, ":", false);
-        if (*token == ":")
-        {
-          do
-          {
-            ++token;
-            clause.attributes.push_back(get_text_token(token, error_output, "Positive integer"));
-	    clear_until_after(token, error_output, ",", ")", false);
-          } while (token.good() && *token == ",");
-
-          clear_until_after(token, error_output, ")");
-        }
-	clauses.push_back(clause);
-      }
-      else if (*token == "id")
-      {
-        Statement_Text clause("id-query", token.line_col());
-        ++token;
-        clear_until_after(token, error_output, ":", false);
-        if (*token == ":")
-        {
-          do
-          {
-            ++token;
-            clause.attributes.push_back(get_text_token(token, error_output, "Positive integer"));
-            clear_until_after(token, error_output, ",", ")", false);
-          } while (token.good() && *token == ",");
-
-          clear_until_after(token, error_output, ")");
-        }
-        clauses.push_back(clause);
-      }
-      else if (*token == "newer")
-      {
-	Statement_Text clause("newer", token.line_col());
-	++token;
-	clear_until_after(token, error_output, ":");
-	clause.attributes.push_back(get_text_token(token, error_output, "\"YYYY-MM-DDThh:mm:ssZ\""));
-	clear_until_after(token, error_output, ")");
-	clauses.push_back(clause);
-      }
-      else if (*token == "changed")
-      {
-	Statement_Text clause("changed", token.line_col());
-	++token;
-	clear_until_after(token, error_output, ":", ")", false);
-	if (*token == ":")
-	{
-	  ++token;
-	  clause.attributes.push_back(get_text_token(token, error_output, "\"YYYY-MM-DDThh:mm:ssZ\""));
-	  clear_until_after(token, error_output, ",", ")", false);
-          if (*token == ",")
-          {
-            ++token;
-	    clause.attributes.push_back(get_text_token(token, error_output, "\"YYYY-MM-DDThh:mm:ssZ\""));
-	  }
-	  else
-	    clause.attributes.push_back(clause.attributes.back());
-	}
-	else
-	{
-	  clause.attributes.push_back("auto");
-	  clause.attributes.push_back("auto");
-	}
-	clear_until_after(token, error_output, ")");
-	clauses.push_back(clause);
-      }
-      else if (*token == "r" || *token == "w"
-	    || *token == "bn" || *token == "bw" || *token == "br")
-      {
-	Statement_Text clause("recurse", token.line_col());
-	clause.attributes.push_back(get_identifier_token(token, error_output, "Recurse type"));
-	clause.attributes.push_back(probe_from(token, error_output));
-        clear_until_after(token, error_output, ":", ")", false);
-        if (*token == ":")
-        {
-          ++token;
-          clause.attributes.push_back(get_text_token(token, error_output, "Role"));
-        }
-	clear_until_after(token, error_output, ")");
-	clauses.push_back(clause);
-      }
-      else if (*token == "area")
-      {
-	Statement_Text clause("area", token.line_col());
-	++token;
-	clause.attributes.push_back(probe_from(token, error_output));
-	if (*token == ":")
-	{
-	  ++token;
-	  clause.attributes.push_back(get_text_token(token, error_output, "Positive integer"));
-	}
-	clear_until_after(token, error_output, ")");
-	clauses.push_back(clause);
-      }
-      else if (*token == "pivot")
-      {
-        Statement_Text clause("pivot", token.line_col());
-        ++token;
-        clause.attributes.push_back(probe_from(token, error_output));
-        clear_until_after(token, error_output, ")");
-        clauses.push_back(clause);
-      }
-      else if (*token == "if")
-      {
-        Statement_Text clause("if", token.line_col());
-        ++token;
-	if (*token == ":")
-	{
-	  ++token;
-          value_stmts.push_back(parse_value_tree< TStatement >(stmt_factory, token, error_output,
-              Statement::elem_eval_possible, true));
-	}
-        clear_until_after(token, error_output, ")");
-        clauses.push_back(clause);
-      }
-      else if (*token == ">" || *token == ">>" || *token == "<" || *token == "<<")
-      {
-	Statement_Text clause("recurse", token.line_col());
-	clause.attributes.push_back(*token);
-	++token;
-	clause.attributes.push_back(probe_from(token, error_output));
-	clear_until_after(token, error_output, ")");
-	clauses.push_back(clause);
-      }
-      else if (isdigit((*token)[0]) ||
-	       ((*token)[0] == '-' && (*token).size() > 1 && isdigit((*token)[1])))
-      {
-	std::string first_number = get_text_token(token, error_output, "Number");
-	clear_until_after(token, error_output, ",", ")", false);
-	if (*token == ")")
-	{
-	  Statement_Text clause("id-query", token.line_col());
-	  clause.attributes.push_back(first_number);
-	  clear_until_after(token, error_output, ")");
-	  clauses.push_back(clause);
-	}
-	else
-	{
-	  Statement_Text clause("bbox-query", token.line_col());
-	  clause.attributes.push_back(first_number);
-	  clear_until_after(token, error_output, ",");
-	  clause.attributes.push_back(get_text_token(token, error_output, "Number"));
-	  clear_until_after(token, error_output, ",");
-	  clause.attributes.push_back(get_text_token(token, error_output, "Number"));
-	  clear_until_after(token, error_output, ",");
-	  clause.attributes.push_back(get_text_token(token, error_output, "Number"));
-	  clear_until_after(token, error_output, ")");
-	  clauses.push_back(clause);
-	}
-      }
-      else
-      {
-	if (error_output)
-	  error_output->add_parse_error("Unknown query clause", token.line_col().first);
-	clear_until_after(token, error_output, ")");
-      }
+      subtrees.push_back(Token_Tree(token, error_output, true));
+      clear_until_after(token, error_output, ")");
     }
     else
     {
@@ -1284,7 +1164,7 @@ TStatement* parse_query(typename TStatement::Factory& stmt_factory, Parsed_Query
   std::string into = probe_into(token, error_output);
 
   TStatement* statement = 0;
-  if (clauses.size() == 0)
+  if (clauses.empty() && subtrees.empty())
   {
     if (from == "")
     {
@@ -1299,33 +1179,23 @@ TStatement* parse_query(typename TStatement::Factory& stmt_factory, Parsed_Query
     else
     {
       if (type == "")
-        statement = create_item_statement< TStatement >(stmt_factory, from, query_line_col.first);
+        statement = create_item_statement< TStatement >(stmt_factory, from, into, query_line_col.first);
       else
       {
         statement = create_query_statement< TStatement >
            (stmt_factory, type, into, query_line_col.first);
-        TStatement* substatement = create_item_statement< TStatement >(stmt_factory, from, query_line_col.first);
+        TStatement* substatement = create_item_statement< TStatement >(stmt_factory, from, "_", query_line_col.first);
         statement->add_statement(substatement, "");
       }
     }
   }
-  else if (clauses.size() == 1 && from == "" && value_stmts.empty())
+  else if (clauses.size() == 1 && from == "" && subtrees.empty())
   {
     if (clauses.front().statement == "has-kv"
        || clauses.front().statement == "has-kv_regex"
        || clauses.front().statement == "has-kv_keyregex"
        || clauses.front().statement == "has-kv_icase"
-       || clauses.front().statement == "has-kv_keyregex_icase"
-       || (clauses.front().statement == "area" && type != "node")
-       || (clauses.front().statement == "around" && type != "node")
-       || (clauses.front().statement == "pivot" && type != "node")
-       || (clauses.front().statement == "polygon" && type != "node")
-       || (clauses.front().statement == "bbox-query" && type != "node")
-       || clauses.front().statement == "changed"
-       || (clauses.front().statement == "newer" && type != "all")
-       || (clauses.front().statement == "recurse" &&
-           (clauses.front().attributes[0] == "<" || clauses.front().attributes[0] == "<<"
-	   || clauses.front().attributes[0] == ">" || clauses.front().attributes[0] == ">>")))
+       || clauses.front().statement == "has-kv_keyregex_icase")
     {
       statement = create_query_statement< TStatement >
           (stmt_factory, type, into, query_line_col.first);
@@ -1340,6 +1210,22 @@ TStatement* parse_query(typename TStatement::Factory& stmt_factory, Parsed_Query
           (stmt_factory, token, error_output, clauses.front(), type, from, into);
     }
   }
+  else if (clauses.empty() && from == "" && subtrees.size() == 1)
+  {
+    bool can_standalone = false;
+    TStatement* filter = stmt_factory.create_criterion(
+        Token_Node_Ptr(subtrees[0], subtrees[0].tree[0].rhs), type, can_standalone, into);
+    if (filter)
+    {
+      if (can_standalone)
+        statement = filter;
+      else
+      {
+        statement = create_query_statement< TStatement >(stmt_factory, type, into, query_line_col.first);
+        statement->add_statement(filter, "");
+      }
+    }
+  }
   else
   {
     statement = create_query_statement< TStatement >(stmt_factory, type, into, query_line_col.first);
@@ -1349,7 +1235,7 @@ TStatement* parse_query(typename TStatement::Factory& stmt_factory, Parsed_Query
     if (from != "")
     {
       TStatement* substatement = create_item_statement< TStatement >
-          (stmt_factory, from, query_line_col.first);
+          (stmt_factory, from, "_", query_line_col.first);
       if (substatement)
 	statement->add_statement(substatement, "");
     }
@@ -1362,20 +1248,20 @@ TStatement* parse_query(typename TStatement::Factory& stmt_factory, Parsed_Query
       if (substatement)
 	statement->add_statement(substatement, "");
     }
-    for (typename std::vector< TStatement* >::const_iterator it = value_stmts.begin(); it != value_stmts.end(); ++it)
+    for (typename std::vector< Token_Tree >::const_iterator it = subtrees.begin(); it != subtrees.end(); ++it)
     {
-      TStatement* substatement = create_filter_statement< TStatement >(stmt_factory, query_line_col.first);
-      if (substatement)
-      {
-        if (*it)
-          substatement->add_statement(*it, "");
-	statement->add_statement(substatement, "");
-      }
+      bool can_standalone = false;
+      TStatement* filter = stmt_factory.create_criterion(
+          Token_Node_Ptr(*it, it->tree[0].rhs), type, can_standalone, "_");
+      if (filter)
+        statement->add_statement(filter, "");
     }
   }
+  clear_until_after(token, error_output, ";");
 
   return statement;
 }
+
 
 template< class TStatement >
 TStatement* parse_statement(typename TStatement::Factory& stmt_factory, Parsed_Query& parsed_query,
@@ -1393,8 +1279,18 @@ TStatement* parse_statement(typename TStatement::Factory& stmt_factory, Parsed_Q
 
   if (*token == "(")
     return parse_union< TStatement >(stmt_factory, parsed_query, token, error_output, depth);
+  else if (*token == "for")
+    return parse_for< TStatement >(stmt_factory, parsed_query, token, error_output, depth);
   else if (*token == "foreach")
     return parse_foreach< TStatement >(stmt_factory, parsed_query, token, error_output, depth);
+  else if (*token == "complete")
+    return parse_complete< TStatement >(stmt_factory, parsed_query, token, error_output, depth);
+  else if (*token == "if")
+    return parse_if< TStatement >(stmt_factory, parsed_query, token, error_output, depth);
+  else if (*token == "retro")
+    return parse_retro< TStatement >(stmt_factory, parsed_query, token, error_output, depth);
+  else if (*token == "timeline")
+    return parse_timeline< TStatement >(stmt_factory, token, error_output);
 
   std::string from = "";
   if (token.good() && *token == ".")
@@ -1409,16 +1305,20 @@ TStatement* parse_statement(typename TStatement::Factory& stmt_factory, Parsed_Q
 
   if (token.good() && *token == "out")
     return parse_output< TStatement >(stmt_factory, from, token, error_output);
-  if (token.good() && *token == "convert")
+  else if (token.good() && *token == "convert")
     return parse_make< TStatement >(stmt_factory, from, token, error_output, "convert");
-  if (token.good() && *token == "make")
+  else if (token.good() && *token == "make")
     return parse_make< TStatement >(stmt_factory, from, token, error_output, "make");
-  if (token.good() && (*token == "<" || *token == "<<" || *token == ">" || *token == ">>"))
+  else if (token.good() && (*token == "<" || *token == "<<" || *token == ">" || *token == ">>"))
     return parse_full_recurse< TStatement >(stmt_factory, token, from, error_output);
-  if (token.good() && *token == "is_in")
+  else if (token.good() && *token == "is_in")
     return parse_coord_query< TStatement >(stmt_factory, token, from, error_output);
-  if (token.good() && *token == "map_to_area")
+  else if (token.good() && *token == "map_to_area")
     return parse_map_to_area< TStatement >(stmt_factory, token, from, error_output);
+  else if (token.good() && *token == "local")
+    return parse_localize< TStatement >(stmt_factory, token, from, error_output);
+  else if (token.good() && *token == "compare")
+    return parse_compare< TStatement >(stmt_factory, parsed_query, token, from, error_output, depth);
 
   std::string type = "";
   if (*token != "out" && from == "")
@@ -1426,7 +1326,8 @@ TStatement* parse_statement(typename TStatement::Factory& stmt_factory, Parsed_Q
     type = *token;
     if (type == "rel")
       type = "relation";
-    else if (type != "node" && type != "way" && type != "relation" && type != "area")
+    else if (type != "node" && type != "way" && type != "relation" && type != "nwr"
+        && type != "derived" && type != "area")
     {
       if (error_output)
 	error_output->add_parse_error("Unknown type \"" + type + "\"", token.line_col().first);
@@ -1488,10 +1389,7 @@ void generic_parse_and_validate_map_ql
   {
     TStatement* statement = parse_statement< TStatement >(stmt_factory, parsed_query, token, error_output, 0);
     if (statement)
-    {
       base_statement->add_statement(statement, "");
-      clear_until_after(token, error_output, ";");
-    }
   }
 
   stmt_seq.push_back(base_statement);

@@ -37,19 +37,33 @@ class Area_Query_Statement : public Output_Statement
     virtual std::string get_name() const { return "area-query"; }
     virtual void execute(Resource_Manager& rman);
     virtual ~Area_Query_Statement();
-    static Generic_Statement_Maker< Area_Query_Statement > statement_maker;
+
+    struct Statement_Maker : public Generic_Statement_Maker< Area_Query_Statement >
+    {
+      Statement_Maker() : Generic_Statement_Maker< Area_Query_Statement >("area-query") {}
+    };
+    static Statement_Maker statement_maker;
+
+    struct Criterion_Maker : public Statement::Criterion_Maker
+    {
+      virtual bool can_standalone(const std::string& type) { return type == "node"; }
+      virtual Statement* create_criterion(const Token_Node_Ptr& tree_it,
+          const std::string& type, const std::string& into,
+          Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output);
+      Criterion_Maker() { Statement::maker_by_ql_criterion()["area"] = this; }
+    };
+    static Criterion_Maker criterion_maker;
 
     virtual Query_Constraint* get_query_constraint();
 
     void get_ranges
-      (std::set< std::pair< Uint32_Index, Uint32_Index > >& nodes_req,
-       std::set< Uint31_Index >& area_block_req,
+      (std::set< Uint31_Index >& area_blocks_req,
        Resource_Manager& rman);
+    unsigned int count_ranges(Resource_Manager& rman);
 
     void get_ranges
       (const std::map< Uint31_Index, std::vector< Area_Skeleton > >& input_areas,
-       std::set< std::pair< Uint32_Index, Uint32_Index > >& nodes_req,
-       std::set< Uint31_Index >& area_block_req,
+       std::set< Uint31_Index >& area_blocks_req,
        Resource_Manager& rman);
 
     void collect_nodes
@@ -87,7 +101,7 @@ class Area_Query_Statement : public Output_Statement
 
     virtual std::string dump_compact_ql(const std::string&) const
     {
-      return "node" + dump_ql_in_query("") + dump_ql_result_name();
+      return "node" + dump_ql_in_query("") + dump_ql_result_name() + ";";
     }
     virtual std::string dump_ql_in_query(const std::string&) const
     {
@@ -102,8 +116,12 @@ class Area_Query_Statement : public Output_Statement
     std::string input;
     long long submitted_id;
     std::vector< Area_Skeleton::Id_Type > area_id;
+    std::set< Uint31_Index > area_blocks_req;
+    bool area_blocks_req_filled;
     static bool is_used_;
     std::vector< Query_Constraint* > constraints;
+    
+    void fill_ranges(Resource_Manager& rman);
 };
 
 

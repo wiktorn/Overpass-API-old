@@ -62,18 +62,15 @@ Osm_Script_Statement::Osm_Script_Statement
 
   int64 max_space(atoll(attributes["element-limit"].c_str()));
   if (max_space <= 0)
-  {
-    std::ostringstream temp;
-    temp<<"For the attribute \"element-limit\" of the element \"osm-script\""
-        <<" the only allowed values are positive integers.";
-    add_static_error(temp.str());
-  }
+    add_static_error("For the attribute \"element-limit\" of the element \"osm-script\""
+        " the only allowed values are positive integers.");
+
   max_allowed_space = max_space;
 
 
   if (!global_settings.get_output_handler())
   {
-    Output_Handler_Parser* format_parser = Output_Handler_Parser::get_format_parser(attributes["output"]);	
+    Output_Handler_Parser* format_parser = Output_Handler_Parser::get_format_parser(attributes["output"]);
     if (!format_parser)
       add_static_error("Unknown output format: " + attributes["output"]);
     else
@@ -159,42 +156,18 @@ Osm_Script_Statement::Osm_Script_Statement
 
   if (attributes["date"] != "")
   {
-    std::string timestamp = attributes["date"];
-
-    desired_timestamp = 0;
-    desired_timestamp |= (atoll(timestamp.c_str())<<26); //year
-    desired_timestamp |= (atoi(timestamp.c_str()+5)<<22); //month
-    desired_timestamp |= (atoi(timestamp.c_str()+8)<<17); //day
-    desired_timestamp |= (atoi(timestamp.c_str()+11)<<12); //hour
-    desired_timestamp |= (atoi(timestamp.c_str()+14)<<6); //minute
-    desired_timestamp |= atoi(timestamp.c_str()+17); //second
-
+    desired_timestamp = Timestamp(attributes["date"]).timestamp;
     if (desired_timestamp == 0)
-    {
-      std::ostringstream temp;
-      temp<<"The attribute \"date\" must be empty or contain a timestamp exactly in the form \"yyyy-mm-ddThh:mm:ssZ\".";
-      add_static_error(temp.str());
-    }
+      add_static_error("The attribute \"date\" must be empty or contain a timestamp exactly in the form \"yyyy-mm-ddThh:mm:ssZ\".");
   }
 
   if (attributes["from"] != "")
   {
-    std::string timestamp = attributes["from"];
-
-    comparison_timestamp = 0;
-    comparison_timestamp |= (atoll(timestamp.c_str())<<26); //year
-    comparison_timestamp |= (atoi(timestamp.c_str()+5)<<22); //month
-    comparison_timestamp |= (atoi(timestamp.c_str()+8)<<17); //day
-    comparison_timestamp |= (atoi(timestamp.c_str()+11)<<12); //hour
-    comparison_timestamp |= (atoi(timestamp.c_str()+14)<<6); //minute
-    comparison_timestamp |= atoi(timestamp.c_str()+17); //second
-
+    comparison_timestamp = Timestamp(attributes["from"]).timestamp;
     if (comparison_timestamp == 0)
-    {
-      std::ostringstream temp;
-      temp<<"The attribute \"from\" must be empty or contain a timestamp exactly in the form \"yyyy-mm-ddThh:mm:ssZ\".";
-      add_static_error(temp.str());
-    }
+      add_static_error("The attribute \"from\" must be empty or contain a timestamp exactly in the form \"yyyy-mm-ddThh:mm:ssZ\".");
+    else if (global_settings.get_output_handler() && !global_settings.get_output_handler()->supports_diff())
+      add_static_error("The selected output format does not support the diff or adiff mode.");
   }
 
   if (attributes["augmented"] != "")
@@ -238,32 +211,13 @@ void Osm_Script_Statement::execute(Resource_Manager& rman)
 
   if (comparison_timestamp > 0)
   {
-    for (std::vector< Statement* >::iterator it = factory->created_statements.begin();
-        it != factory->created_statements.end(); ++it)
-    {
-      Print_Statement* print = dynamic_cast< Print_Statement* >(*it);
-      if (print)
-        print->set_collect_lhs();
-    }
-
-    rman.set_diff_from_timestamp(comparison_timestamp);
-    rman.set_diff_to_timestamp(desired_timestamp);
-    rman.set_desired_timestamp(comparison_timestamp);
+    rman.start_diff(comparison_timestamp, desired_timestamp);
 
     for (std::vector< Statement* >::iterator it(substatements.begin());
         it != substatements.end(); ++it)
       (*it)->execute(rman);
 
-    for (std::vector< Statement* >::iterator it = factory->created_statements.begin();
-        it != factory->created_statements.end(); ++it)
-    {
-      Print_Statement* print = dynamic_cast< Print_Statement* >(*it);
-      if (print)
-        print->set_collect_rhs(add_deletion_information);
-    }
-
-    rman.sets().clear();
-    rman.set_desired_timestamp(desired_timestamp);
+    rman.switch_diff_rhs(add_deletion_information);
   }
 
   for (std::vector< Statement* >::iterator it(substatements.begin());

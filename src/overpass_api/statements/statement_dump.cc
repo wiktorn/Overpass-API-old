@@ -43,9 +43,9 @@ Statement* Statement_Dump::create_non_dump_stmt(Statement::Factory& stmt_factory
 {
   if (non_dump_stmt)
     return non_dump_stmt;
-  
+
   non_dump_stmt = stmt_factory.create_statement(name_, line_number, attributes);
-  
+
   if (non_dump_stmt)
   {
     for (std::vector< Statement_Dump* >::const_iterator it = substatements.begin(); it != substatements.end(); ++it)
@@ -55,7 +55,7 @@ Statement* Statement_Dump::create_non_dump_stmt(Statement::Factory& stmt_factory
         non_dump_stmt->add_statement(substmt, "");
     }
   }
-  
+
   return non_dump_stmt;
 }
 
@@ -74,7 +74,7 @@ std::string indent(const std::string& subresult)
   }
   if (subresult.substr(pos) != "")
     result += "  " + subresult.substr(pos);
-  
+
   return result;
 }
 
@@ -83,9 +83,9 @@ std::string Statement_Dump::dump_xml() const
 {
   if (non_dump_stmt)
     return non_dump_stmt->dump_xml("");
-  
+
   std::string result;
-  
+
   if (substatements.empty())
   {
     result = std::string("<") + name_;
@@ -105,7 +105,7 @@ std::string Statement_Dump::dump_xml() const
     for (std::vector< Statement_Dump* >::const_iterator it = substatements.begin();
         it != substatements.end(); ++it)
       result += indent((*it)->dump_xml());
-    
+
     result += std::string("</") + name_ + ">\n";
   }
 
@@ -142,7 +142,7 @@ std::string Statement_Dump::dump_compact_map_ql(Statement::Factory& stmt_factory
     if (output_val != "")
       result += "[out:" + output_val + output_config + "]";
 
-    if (attributes.find("augmented") != attributes.end() && 
+    if (attributes.find("augmented") != attributes.end() &&
         attributes.find("augmented")->second == "deletions" &&
         attributes.find("from") != attributes.end())
     {
@@ -167,21 +167,15 @@ std::string Statement_Dump::dump_compact_map_ql(Statement::Factory& stmt_factory
         it != substatements.end(); ++it)
       result += (*it)->dump_compact_map_ql(stmt_factory);
   }
-  else if (name_ == "area-query" || name_ == "around"|| name_ == "bbox-query" || name_ == "convert"
-      || name_ == "coord-query" || name_ == "difference" || name_ == "foreach" || name_ == "id-query"
-      || name_ == "item" || name_ == "make" || name_ == "newer" || name_ == "pivot"
-      || name_ == "polygon-query" || name_ == "print" || name_ == "query" || name_ == "recurse"
-      || name_ == "union" || name_ == "user")
+  else
   {
     Statement* stmt = create_non_dump_stmt(stmt_factory);
     if (stmt)
       result += stmt->dump_compact_ql("");
+    else
+      result += "(" + name_ + ":)";
   }
-  else
-    result += "(" + name_ + ":)";
-  
-  if (name_ != "osm-script")
-    result += ";";
+
   return result;
 }
 
@@ -219,7 +213,7 @@ std::string Statement_Dump::dump_bbox_map_ql(Statement::Factory& stmt_factory)
     if (output_val != "")
       result += "[out:" + output_val + output_config + "]";
 
-    if (attributes.find("augmented") != attributes.end() && 
+    if (attributes.find("augmented") != attributes.end() &&
         attributes.find("augmented")->second == "deletions" &&
         attributes.find("from") != attributes.end())
     {
@@ -245,21 +239,17 @@ std::string Statement_Dump::dump_bbox_map_ql(Statement::Factory& stmt_factory)
         it != substatements.end(); ++it)
       result += (*it)->dump_bbox_map_ql(stmt_factory);
   }
-  else if (name_ == "area-query" || name_ == "around"|| name_ == "bbox-query" || name_ == "convert"
-      || name_ == "coord-query" || name_ == "difference" || name_ == "foreach" || name_ == "id-query"
-      || name_ == "item" || name_ == "make" || name_ == "newer" || name_ == "pivot"
-      || name_ == "polygon-query" || name_ == "print" || name_ == "query" || name_ == "recurse"
-      || name_ == "union" || name_ == "user")
+  else
   {
     Statement* stmt = create_non_dump_stmt(stmt_factory);
     if (stmt)
-      result += stmt->dump_compact_ql(name_ == "difference" || name_ == "foreach" || name_ == "query" || name_ == "union" ? "(bbox)" : "");
+      result += stmt->dump_compact_ql(
+          name_ == "complete" || name_ == "difference" || name_ == "for" || name_ == "foreach"
+          || name_ == "if" || name_ == "query" || name_ == "union" ? "(bbox)" : "");
+    else
+      result += "(" + name_ + ":)";
   }
-  else
-    result += "(" + name_ + ":)";
-  
-  if (name_ != "osm-script")
-    result += ";";
+
   return result;
 }
 
@@ -293,7 +283,7 @@ std::string Statement_Dump::dump_pretty_map_ql(Statement::Factory& stmt_factory)
     if (output_val != "")
       result += "[out:" + output_val + output_config + "]\n";
 
-    if (attributes.find("augmented") != attributes.end() && 
+    if (attributes.find("augmented") != attributes.end() &&
         attributes.find("augmented")->second == "deletions" &&
         attributes.find("from") != attributes.end())
     {
@@ -318,21 +308,15 @@ std::string Statement_Dump::dump_pretty_map_ql(Statement::Factory& stmt_factory)
         it != substatements.end(); ++it)
       result += (*it)->dump_pretty_map_ql(stmt_factory) + "\n";
   }
-  else if (name_ == "area-query" || name_ == "around"|| name_ == "bbox-query" || name_ == "convert"
-      || name_ == "coord-query" || name_ == "difference" || name_ == "foreach" || name_ == "id-query"
-      || name_ == "item" || name_ == "make" || name_ == "newer" || name_ == "pivot"
-      || name_ == "polygon-query" || name_ == "print" || name_ == "query" || name_ == "recurse"
-      || name_ == "union" || name_ == "user")
+  else
   {
     Statement* stmt = create_non_dump_stmt(stmt_factory);
     if (stmt)
       result += stmt->dump_pretty_ql("");
+    else
+      result += "(" + name_ + ":)";
   }
-  else
-    result += "(" + name_ + ":)";
-  
-  if (name_ != "osm-script")
-    result += ";";
+
   return result;
 }
 
@@ -344,13 +328,25 @@ Statement_Dump* Statement_Dump::Factory::create_statement
 }
 
 
-Statement_Dump* Statement_Dump::Factory::create_statement(
-    const Token_Node_Ptr& tree_it, Statement::QL_Context tree_context)
+Statement_Dump* Statement_Dump::Factory::create_evaluator(
+    const Token_Node_Ptr& tree_it, Statement::QL_Context tree_context,
+    const Statement::Return_Type_Checker& eval_type)
 {
-  Statement* stmt = stmt_factory->create_statement(tree_it, tree_context);
+  Statement* stmt = stmt_factory->create_evaluator(tree_it, tree_context, eval_type);
   if (stmt)
     return new Statement_Dump("universal_dump", std::map< std::string, std::string >(), tree_it->line_col.first, stmt);
-  
+
+  return 0;
+}
+
+
+Statement_Dump* Statement_Dump::Factory::create_criterion(const Token_Node_Ptr& tree_it,
+    const std::string& type, bool& can_standalone, const std::string& into)
+{
+  Statement* stmt = stmt_factory->create_criterion(tree_it, type, can_standalone, into);
+  if (stmt)
+    return new Statement_Dump("universal_dump", std::map< std::string, std::string >(), tree_it->line_col.first, stmt);
+
   return 0;
 }
 

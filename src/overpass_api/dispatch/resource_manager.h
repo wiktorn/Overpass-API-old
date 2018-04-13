@@ -23,16 +23,87 @@
 #include "../../template_db/transaction.h"
 #include "../core/datatypes.h"
 #include "../core/parsed_query.h"
+#include "../data/diff_set.h"
 #include "../data/user_data_cache.h"
-#include "../osm-backend/area_updater.h"
 
 
 class Statement;
+
 
 struct Watchdog_Callback
 {
   virtual void ping() const = 0;
 };
+
+
+
+namespace Diff_Action
+{
+  enum _ { positive, collect_lhs, collect_rhs_no_del, collect_rhs_with_del, show_old, show_new };
+};
+
+
+class Runtime_Stack_Frame
+{
+public:
+  Runtime_Stack_Frame(Runtime_Stack_Frame* parent_ = 0)
+    : parent(parent_), loop_count(0), loop_size(0),
+    desired_timestamp(parent_ ? parent_->desired_timestamp : NOW),
+    desired_action(parent_ ? parent_->desired_action : Diff_Action::positive),
+    diff_from_timestamp(parent_ ? parent_->diff_from_timestamp : NOW),
+    diff_to_timestamp(parent_ ? parent_->diff_to_timestamp : NOW) {}
+
+  // Returns the used RAM including the used RAM of parent frames
+  uint64 total_used_space() const;
+
+  Set* get_set(const std::string& set_name);
+  Diff_Set* get_diff_set(const std::string& set_name);
+  const std::string* get_value(const std::string& set_name, const std::string& key);
+  const std::map< std::string, std::string >* get_set_key_values(const std::string& set_name);
+  void swap_set(const std::string& set_name, Set& set_);
+  void swap_diff_set(const std::string& set_name, Diff_Set& set_);
+  void set_value(const std::string& set_name, const std::string& key, const std::string& value);
+  void erase_set(const std::string& set_name);
+  void clear_sets();
+
+  void copy_outward(const std::string& inner_set_name, const std::string& top_set_name);
+  void move_outward(const std::string& inner_set_name, const std::string& top_set_name);
+  bool union_inward(const std::string& top_set_name, const std::string& inner_set_name);
+  void copy_inward(const std::string& top_set_name, const std::string& inner_set_name);
+  void substract_from_inward(const std::string& top_set_name, const std::string& inner_set_name);
+  void move_all_inward();
+  void move_all_inward_except(const std::string& set_name);
+
+  uint64 get_desired_timestamp() const { return desired_timestamp; }
+  Diff_Action::_ get_desired_action() const { return desired_action; }
+  uint64 get_diff_from_timestamp() const { return diff_from_timestamp; }
+  uint64 get_diff_to_timestamp() const { return diff_to_timestamp; }
+
+  void set_desired_timestamp(uint64 timestamp) { desired_timestamp = (timestamp == 0 ? NOW : timestamp); }
+  void set_desired_action(Diff_Action::_ action) { desired_action = action; }
+  void set_diff_from_timestamp(uint64 timestamp) { diff_from_timestamp = timestamp; }
+  void set_diff_to_timestamp(uint64 timestamp) { diff_to_timestamp = timestamp; }
+
+  uint64 total_size();
+  std::vector< std::pair< uint, uint > > stack_progress() const;
+  void set_loop_size(uint loop_size_) { loop_size = loop_size_; }
+  void count_loop() { ++loop_count; }
+
+private:
+  Runtime_Stack_Frame* parent;
+  std::map< std::string, Set > sets;
+  std::map< std::string, Diff_Set > diff_sets;
+  std::map< std::string, std::map< std::string, std::string > > key_values;
+  std::map< std::string, uint64 > size_per_set;
+  uint loop_count;
+  uint loop_size;
+
+  uint64 desired_timestamp;
+  Diff_Action::_ desired_action;
+  uint64 diff_from_timestamp;
+  uint64 diff_to_timestamp;
+};
+
 
 class Resource_Manager
 {
@@ -42,26 +113,40 @@ public:
 
   Resource_Manager(Transaction& transaction_, Parsed_Query& global_settings_, Error_Output* error_output_,
 		   Transaction& area_transaction_, Watchdog_Callback* watchdog_,
-		   Area_Usage_Listener* area_updater__)
-      : transaction(&transaction_), error_output(error_output_),
-        area_transaction(&area_transaction_),
-        area_updater_(area_updater__),
-	watchdog(watchdog_), global_settings(&global_settings_), global_settings_owned(false),
-	start_time(time(NULL)), last_ping_time(0), last_report_time(0),
-	max_allowed_time(0), max_allowed_space(0),
-	desired_timestamp(NOW), diff_from_timestamp(NOW), diff_to_timestamp(NOW) {}
-	
+		   Area_Usage_Listener* area_updater__);
+
   ~Resource_Manager()
   {
+    for (std::vector< Runtime_Stack_Frame* >::iterator it = runtime_stack.begin();
+        it != runtime_stack.end(); ++it)
+      delete *it;
+
     if (global_settings_owned)
       delete global_settings;
     delete area_updater_;
   }
 
-  std::map< std::string, Set >& sets()
-  {
-    return sets_;
-  }
+  const Set* get_set(const std::string& set_name);
+  const Diff_Set* get_diff_set(const std::string& set_name);
+  const std::string* get_value(const std::string& set_name, const std::string& key);
+  const std::map< std::string, std::string >* get_set_key_values(const std::string& set_name);
+  void swap_set(const std::string& set_name, Set& set_);
+  void swap_diff_set(const std::string& set_name, Diff_Set& set_);
+  void set_value(const std::string& set_name, const std::string& key, const std::string& value);
+  void erase_set(const std::string& set_name);
+  void clear_sets();
+
+  void push_stack_frame();
+  void copy_outward(const std::string& inner_set_name, const std::string& top_set_name);
+  void move_outward(const std::string& inner_set_name, const std::string& top_set_name);
+  bool union_inward(const std::string& top_set_name, const std::string& inner_set_name);
+  void copy_inward(const std::string& top_set_name, const std::string& inner_set_name);
+  void substract_from_inward(const std::string& top_set_name, const std::string& inner_set_name);
+  void move_all_inward();
+  void move_all_inward_except(const std::string& set_name);
+  void pop_stack_frame();
+
+  void count_loop();
 
   Area_Usage_Listener* area_updater()
   {
@@ -69,10 +154,6 @@ public:
   }
 
   Parsed_Query& get_global_settings() const { return *global_settings; }
-
-  void push_reference(const Set& set_);
-  void pop_reference();
-  void count_loop();
 
   void log_and_display_error(std::string message);
 
@@ -87,13 +168,16 @@ public:
   Transaction* get_transaction() { return transaction; }
   Transaction* get_area_transaction() { return area_transaction; }
 
-  uint64 get_desired_timestamp() const { return desired_timestamp; }
-  uint64 get_diff_from_timestamp() const { return diff_from_timestamp; }
-  uint64 get_diff_to_timestamp() const { return diff_to_timestamp; }
+  uint64 get_desired_timestamp() const;
+  Diff_Action::_ get_desired_action() const;
+  uint64 get_diff_from_timestamp() const;
+  uint64 get_diff_to_timestamp() const;
 
-  void set_desired_timestamp(uint64 timestamp) { desired_timestamp = timestamp; }
-  void set_diff_from_timestamp(uint64 timestamp) { diff_from_timestamp = timestamp; }
-  void set_diff_to_timestamp(uint64 timestamp) { diff_to_timestamp = timestamp; }
+  void set_desired_timestamp(uint64 timestamp);
+  void start_diff(uint64 comparison_timestamp, uint64 desired_timestamp);
+  void switch_diff_rhs(bool add_deletion_information);
+  void switch_diff_show_from(const std::string& diff_set_name);
+  void switch_diff_show_to(const std::string& diff_set_name);
 
   const std::map< uint32, std::string >& users() { return user_data_cache.users(*transaction); }
 
@@ -102,10 +186,8 @@ public:
   const std::vector< uint64 >& cpu_time() const { return cpu_runtime; }
 
 private:
-  std::map< std::string, Set > sets_;
-  std::vector< const Set* > set_stack;
-  std::vector< std::pair< uint, uint > > stack_progress;
-  std::vector< long long > set_stack_sizes;
+  std::vector< Runtime_Stack_Frame* > runtime_stack;
+
   Transaction* transaction;
   Error_Output* error_output;
   Transaction* area_transaction;
@@ -119,10 +201,6 @@ private:
   uint32 last_report_time;
   uint32 max_allowed_time;
   uint64 max_allowed_space;
-
-  uint64 desired_timestamp;
-  uint64 diff_from_timestamp;
-  uint64 diff_to_timestamp;
 
   std::vector< clock_t > cpu_start_time;
   std::vector< uint64 > cpu_runtime;
@@ -148,5 +226,19 @@ struct Resource_Error
   uint64 size;
   uint runtime;
 };
+
+
+struct Cpu_Timer
+{
+  Cpu_Timer(Resource_Manager& rman_, uint index_)
+      : rman(&rman_), index(index_)
+  { rman->start_cpu_timer(index); }
+  ~Cpu_Timer() { rman->stop_cpu_timer(index); }
+
+private:
+  Resource_Manager* rman;
+  uint index;
+};
+
 
 #endif

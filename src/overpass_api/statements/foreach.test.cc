@@ -24,6 +24,7 @@
 #include "foreach.h"
 #include "id_query.h"
 #include "print.h"
+#include "testing_tools.h"
 
 
 Resource_Manager& perform_id_query(Resource_Manager& rman, std::string type, uint64 id)
@@ -32,17 +33,8 @@ Resource_Manager& perform_id_query(Resource_Manager& rman, std::string type, uin
   global_settings.set_output_handler(Output_Handler_Parser::get_format_parser("xml"), 0, 0);
   std::ostringstream buf("");
   buf<<id;
-  std::string id_ = buf.str();
 
-  const char* attributes[5];
-  attributes[0] = "type";
-  attributes[1] = type.c_str();
-  attributes[2] = "ref";
-  attributes[3] = id_.c_str();
-  attributes[4] = 0;
-
-  Id_Query_Statement stmt(1, convert_c_pairs(attributes), global_settings);
-  stmt.execute(rman);
+  Id_Query_Statement(1, Attr()("type", type)("ref", buf.str()).kvs(), global_settings).execute(rman);
 
   return rman;
 }
@@ -57,33 +49,38 @@ Resource_Manager& fill_loop_set
   global_settings.set_output_handler(Output_Handler_Parser::get_format_parser("xml"), 0, 0);
   Resource_Manager partial_rman(transaction, &global_settings);
   perform_id_query(partial_rman, "node", 1 + global_node_offset);
-  if (!partial_rman.sets()["_"].nodes.empty())
-    rman.sets()[set_name].nodes[partial_rman.sets()["_"].nodes.begin()->first].push_back(partial_rman.sets()["_"].nodes.begin()->second.front());
-  perform_id_query(partial_rman, "node", 2 + global_node_offset);
-  if (!partial_rman.sets()["_"].nodes.empty())
-    rman.sets()[set_name].nodes[partial_rman.sets()["_"].nodes.begin()->first].push_back(partial_rman.sets()["_"].nodes.begin()->second.front());
-  perform_id_query(partial_rman, "node", 3 + global_node_offset);
-  if (!partial_rman.sets()["_"].nodes.empty())
-    rman.sets()[set_name].nodes[partial_rman.sets()["_"].nodes.begin()->first].push_back(partial_rman.sets()["_"].nodes.begin()->second.front());
-/*  perform_id_query(partial_rman, "way", 1);
-  if (!partial_rman.sets()["_"].ways.empty())
-    rman.sets()[set_name].ways[partial_rman.sets()["_"].ways.begin()->first].push_back(partial_rman.sets()["_"].ways.begin()->second.front());*/
-  perform_id_query(partial_rman, "way", way_id_offset + 1);
-  if (!partial_rman.sets()["_"].ways.empty())
-    rman.sets()[set_name].ways[partial_rman.sets()["_"].ways.begin()->first].push_back(partial_rman.sets()["_"].ways.begin()->second.front());
-  perform_id_query(partial_rman, "way", 2*way_id_offset + 1);
-  if (!partial_rman.sets()["_"].ways.empty())
-    rman.sets()[set_name].ways[partial_rman.sets()["_"].ways.begin()->first].push_back(partial_rman.sets()["_"].ways.begin()->second.front());
-/*  perform_id_query(partial_rman, "relation", 10);
-  if (!partial_rman.sets()["_"].relations.empty())
-    rman.sets()[set_name].relations[partial_rman.sets()["_"].relations.begin()->first].push_back(partial_rman.sets()["_"].relations.begin()->second.front());*/
-  perform_id_query(partial_rman, "relation", 21);
-  if (!partial_rman.sets()["_"].relations.empty())
-    rman.sets()[set_name].relations[partial_rman.sets()["_"].relations.begin()->first].push_back(partial_rman.sets()["_"].relations.begin()->second.front());
-  perform_id_query(partial_rman, "relation", 32);
-  if (!partial_rman.sets()["_"].relations.empty())
-    rman.sets()[set_name].relations[partial_rman.sets()["_"].relations.begin()->first].push_back(partial_rman.sets()["_"].relations.begin()->second.front());
+  Set target;
+  rman.swap_set(set_name, target);
 
+  const Set* default_ = partial_rman.get_set("_");
+  if (default_ && !default_->nodes.empty())
+    target.nodes[default_->nodes.begin()->first].push_back(default_->nodes.begin()->second.front());
+  perform_id_query(partial_rman, "node", 2 + global_node_offset);
+  if (default_ && !default_->nodes.empty())
+    target.nodes[default_->nodes.begin()->first].push_back(default_->nodes.begin()->second.front());
+  perform_id_query(partial_rman, "node", 3 + global_node_offset);
+  if (default_ && !default_->nodes.empty())
+    target.nodes[default_->nodes.begin()->first].push_back(default_->nodes.begin()->second.front());
+/*  perform_id_query(partial_rman, "way", 1);
+  if (!default_->ways.empty())
+    target.ways[default_->ways.begin()->first].push_back(default_->ways.begin()->second.front());*/
+  perform_id_query(partial_rman, "way", way_id_offset + 1);
+  if (default_ && !default_->ways.empty())
+    target.ways[default_->ways.begin()->first].push_back(default_->ways.begin()->second.front());
+  perform_id_query(partial_rman, "way", 2*way_id_offset + 1);
+  if (default_ && !default_->ways.empty())
+    target.ways[default_->ways.begin()->first].push_back(default_->ways.begin()->second.front());
+/*  perform_id_query(partial_rman, "relation", 10);
+  if (!default_->relations.empty())
+    target.relations[default_->relations.begin()->first].push_back(default_->relations.begin()->second.front());*/
+  perform_id_query(partial_rman, "relation", 21);
+  if (default_ && !default_->relations.empty())
+    target.relations[default_->relations.begin()->first].push_back(default_->relations.begin()->second.front());
+  perform_id_query(partial_rman, "relation", 32);
+  if (default_ && !default_->relations.empty())
+    target.relations[default_->relations.begin()->first].push_back(default_->relations.begin()->second.front());
+
+  rman.swap_set(set_name, target);
   return rman;
 }
 
@@ -100,106 +97,56 @@ int main(int argc, char* args[])
   uint64 global_node_offset = atoll(args[4]);
   Parsed_Query global_settings;
   global_settings.set_output_handler(Output_Handler_Parser::get_format_parser("xml"), 0, 0);
+  Statement_Container stmt_cont(global_settings);
 
   std::cout<<
   "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
   "<osm>\n";
 
-  if ((test_to_execute == "") || (test_to_execute == "1"))
+  try
   {
-    try
+    if ((test_to_execute == "") || (test_to_execute == "1"))
     {
       Nonsynced_Transaction transaction(false, false, args[3], "");
       Resource_Manager rman(transaction, &global_settings);
       fill_loop_set(rman, "_", pattern_size, global_node_offset, transaction);
-      {
-	const char* attributes[] = { 0 };
-	Foreach_Statement stmt1(0, convert_c_pairs(attributes), global_settings);
-	
-	const char* attributes_print[] = { 0 };
-	Print_Statement stmt2(0, convert_c_pairs(attributes_print), global_settings);
-	stmt1.add_statement(&stmt2, "");
-	
-	stmt1.execute(rman);
-      }
+
+      Foreach_Statement stmt(0, Attr().kvs(), global_settings);
+      stmt_cont.add_stmt(new Print_Statement(0, Attr().kvs(), global_settings), &stmt);
+      stmt.execute(rman);
     }
-    catch (File_Error e)
-    {
-      std::cerr<<"File error caught: "
-      <<e.error_number<<' '<<e.filename<<' '<<e.origin<<'\n';
-    }
-  }
-  if ((test_to_execute == "") || (test_to_execute == "2"))
-  {
-    try
+    if ((test_to_execute == "") || (test_to_execute == "2"))
     {
       Nonsynced_Transaction transaction(false, false, args[3], "");
       Resource_Manager rman(transaction, &global_settings);
       fill_loop_set(rman, "_", pattern_size, global_node_offset, transaction);
-      {
-	const char* attributes[] = { 0 };
-	Foreach_Statement stmt1(0, convert_c_pairs(attributes), global_settings);
-	stmt1.execute(rman);
-      }
-      {
-	const char* attributes_print[] = { 0 };
-	Print_Statement stmt(0, convert_c_pairs(attributes_print), global_settings);
-	stmt.execute(rman);
-      }
+
+      Foreach_Statement(0, Attr().kvs(), global_settings).execute(rman);
+      Print_Statement(0, Attr().kvs(), global_settings).execute(rman);
     }
-    catch (File_Error e)
-    {
-      std::cerr<<"File error caught: "
-      <<e.error_number<<' '<<e.filename<<' '<<e.origin<<'\n';
-    }
-  }
-  if ((test_to_execute == "") || (test_to_execute == "3"))
-  {
-    try
+    if ((test_to_execute == "") || (test_to_execute == "3"))
     {
       Nonsynced_Transaction transaction(false, false, args[3], "");
       Resource_Manager rman(transaction, &global_settings);
       fill_loop_set(rman, "A", pattern_size, global_node_offset, transaction);
-      {
-	const char* attributes[] = { "from", "A", "into", "B", 0 };
-	Foreach_Statement stmt1(0, convert_c_pairs(attributes), global_settings);
-	
-	const char* attributes_print[] = { "from", "B", 0 };
-	Print_Statement stmt2(0, convert_c_pairs(attributes_print), global_settings);
-	stmt1.add_statement(&stmt2, "");
-	
-	stmt1.execute(rman);
-      }
+
+      Foreach_Statement stmt(0, Attr()("from", "A")("into", "B").kvs(), global_settings);
+      stmt_cont.add_stmt(new Print_Statement(0, Attr()("from", "B").kvs(), global_settings), &stmt);
+      stmt.execute(rman);
     }
-    catch (File_Error e)
-    {
-      std::cerr<<"File error caught: "
-      <<e.error_number<<' '<<e.filename<<' '<<e.origin<<'\n';
-    }
-  }
-  if ((test_to_execute == "") || (test_to_execute == "4"))
-  {
-    try
+    if ((test_to_execute == "") || (test_to_execute == "4"))
     {
       Nonsynced_Transaction transaction(false, false, args[3], "");
       Resource_Manager rman(transaction, &global_settings);
       fill_loop_set(rman, "A", pattern_size, global_node_offset, transaction);
-      {
-	const char* attributes[] = { "from", "A", "into", "B", 0 };
-	Foreach_Statement stmt1(0, convert_c_pairs(attributes), global_settings);
-	stmt1.execute(rman);
-      }
-      {
-	const char* attributes[] = { "from", "A", 0 };
-	Print_Statement stmt(0, convert_c_pairs(attributes), global_settings);
-	stmt.execute(rman);
-      }
+
+      Foreach_Statement(0, Attr()("from", "A")("into", "B").kvs(), global_settings).execute(rman);
+      Print_Statement(0, Attr()("from", "A").kvs(), global_settings).execute(rman);
     }
-    catch (File_Error e)
-    {
-      std::cerr<<"File error caught: "
-      <<e.error_number<<' '<<e.filename<<' '<<e.origin<<'\n';
-    }
+  }
+  catch (File_Error e)
+  {
+    std::cerr<<"File error caught: "<<e.error_number<<' '<<e.filename<<' '<<e.origin<<'\n';
   }
 
   std::cout<<"</osm>\n";

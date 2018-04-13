@@ -23,6 +23,7 @@
 #include "../core/datatypes.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdlib>
 #include <iomanip>
 #include <map>
@@ -51,15 +52,59 @@ std::string to_string(T t)
 }
 
 
+template < typename T >
+std::string fixed_to_string(T t, unsigned int precision)
+{
+  std::ostringstream out;
+  out<<std::fixed<<std::setprecision(precision)<<t;
+  return out.str();
+}
+
+
 inline bool try_double(const std::string& input, double& result)
 {
   if (input == "")
     return false;
-  
+
   const char* input_c = input.c_str();
   char* end_c = 0;
+  errno = 0;
   result = strtod(input_c, &end_c);
   return input_c + input.size() == end_c;
+}
+
+
+inline bool try_starts_with_double(const std::string& input, double& result)
+{
+  if (input == "")
+    return false;
+
+  const char* input_c = input.c_str();
+  char* end_c = 0;
+  errno = 0;
+  result = strtod(input_c, &end_c);
+  return !errno && input_c != end_c;
+}
+
+
+inline std::string double_suffix(const std::string& input)
+{
+  if (input == "")
+    return "";
+
+  const char* input_c = input.c_str();
+  char* end_c = 0;
+  errno = 0;
+  strtod(input_c, &end_c);
+
+  if (!errno && input_c != end_c)
+  {
+    while (*end_c && isspace(*end_c))
+      ++end_c;
+    return end_c;
+  }
+
+  return "";
 }
 
 
@@ -67,71 +112,22 @@ inline bool try_int64(const std::string& input, int64& result)
 {
   if (input == "")
     return false;
-  
+
   const char* input_c = input.c_str();
   char* end_c = 0;
+  errno = 0;
   result = strtoll(input_c, &end_c, 0);
   return input_c + input.size() == end_c;
 }
 
 
-template< typename T >
-struct Array
+inline bool string_represents_boolean_true(const std::string& val)
 {
-  Array(unsigned int size) : ptr(0), size_(size)
-  {
-    if (size > 0)
-      ptr = new T[size];
-  }
-  ~Array() { delete[] ptr; }
-  
-  const T& operator[](unsigned int i) const { return ptr[i]; }  
-  T& operator[](unsigned int i) { return ptr[i]; }  
-  unsigned int size() const { return size_; }
-  
-private:
-  T* ptr;
-  unsigned int size_;
-};
-
-
-template< typename Object >
-struct Owner
-{
-  Owner(Object* ptr_) : ptr(ptr_) {}
-  ~Owner() { delete ptr; }
-  
-  operator bool() const { return ptr; }
-  Object& operator*() const { return *ptr; }
-  
-private:
-  Owner(const Owner&);
-  Owner& operator=(const Owner&);
-  
-  Object* ptr;
-};
-
-
-template< typename Pointer >
-struct Owning_Array
-{
-  Owning_Array() {}
-  ~Owning_Array()
-  {
-    for (typename std::vector< Pointer >::iterator it = content.begin(); it != content.end(); ++it)
-      delete *it;
-  }
-  
-  const Pointer& operator[](uint i) const { return content[i]; }
-  void push_back(Pointer ptr) { content.push_back(ptr); }
-  uint size() const { return content.size(); }
-  
-private:
-  Owning_Array(const Owning_Array&);
-  Owning_Array& operator=(const Owning_Array&);
-  
-  std::vector< Pointer > content;
-};
+  double val_d = 0;
+  if (try_double(val, val_d))
+    return val_d != 0;
+  return !val.empty();
+}
 
 
 template< typename Index, typename Object >

@@ -23,9 +23,10 @@
 
 
 Evaluator_Aggregator::Evaluator_Aggregator
-    (const std::string& func_name, int line_number_, const std::map< std::string, std::string >& input_attributes,
+    (const std::string& func_name, int line_number_,
+     const std::map< std::string, std::string >& input_attributes,
       Parsed_Query& global_settings)
-    : Evaluator(line_number_), rhs(0), input_set(0)
+    : Evaluator(line_number_), rhs(0)
 {
   std::map< std::string, std::string > attributes;
   attributes["from"] = "_";
@@ -46,30 +47,45 @@ void Evaluator_Aggregator::add_statement(Statement* statement, std::string text)
 }
 
 
-template< typename Index, typename Maybe_Attic, typename Object >
+template< typename Index, typename Maybe_Attic >
 void eval_elems(Value_Aggregator& aggregator, Eval_Task& task,
-    const std::map< Index, std::vector< Maybe_Attic > >& elems, Tag_Store< Index, Object >* tag_store)
+    const std::map< Index, std::vector< Maybe_Attic > >& elems, Set_With_Context& input_set,
+    const std::string* key)
 {
   for (typename std::map< Index, std::vector< Maybe_Attic > >::const_iterator idx_it = elems.begin();
       idx_it != elems.end(); ++idx_it)
   {
     for (typename std::vector< Maybe_Attic >::const_iterator elem_it = idx_it->second.begin();
         elem_it != idx_it->second.end(); ++elem_it)
-      aggregator.update_value(task.eval(&*elem_it, tag_store ? tag_store->get(idx_it->first, *elem_it) : 0, 0));
+      aggregator.update_value(task.eval(input_set.get_context(idx_it->first, *elem_it), key));
   }
 }
 
 
-Eval_Task* Evaluator_Aggregator::get_task(const Prepare_Task_Context& context)
+template< typename Index, typename Maybe_Attic >
+void eval_elems(Geometry_Aggregator& aggregator, Eval_Geometry_Task& task,
+    const std::map< Index, std::vector< Maybe_Attic > >& elems, Set_With_Context& input_set)
+{
+  for (typename std::map< Index, std::vector< Maybe_Attic > >::const_iterator idx_it = elems.begin();
+      idx_it != elems.end(); ++idx_it)
+  {
+    for (typename std::vector< Maybe_Attic >::const_iterator elem_it = idx_it->second.begin();
+        elem_it != idx_it->second.end(); ++elem_it)
+      aggregator.consume_value(task.eval(input_set.get_context(idx_it->first, *elem_it)));
+  }
+}
+
+
+Eval_Task* Evaluator_Aggregator::get_string_task(Prepare_Task_Context& context, const std::string* key)
 {
   if (!rhs)
     return 0;
 
-  Owner< Eval_Task > rhs_task(rhs->get_task(context));
+  Owner< Eval_Task > rhs_task(rhs->get_string_task(context, key));
   if (!rhs_task)
     return 0;
 
-  const Set_With_Context* input_set = context.get_set(input);
+  Set_With_Context* input_set = context.get_set(input);
   if (!input_set || !input_set->base)
     return 0;
 
@@ -77,36 +93,59 @@ Eval_Task* Evaluator_Aggregator::get_task(const Prepare_Task_Context& context)
   if (!value_agg)
     return 0;
 
-  eval_elems(*value_agg, *rhs_task, input_set->base->nodes, input_set->tag_store_nodes);
-  eval_elems(*value_agg, *rhs_task, input_set->base->attic_nodes, input_set->tag_store_attic_nodes);
-  eval_elems(*value_agg, *rhs_task, input_set->base->ways, input_set->tag_store_ways);
-  eval_elems(*value_agg, *rhs_task, input_set->base->attic_ways, input_set->tag_store_attic_ways);
-  eval_elems(*value_agg, *rhs_task, input_set->base->relations, input_set->tag_store_relations);
-  eval_elems(*value_agg, *rhs_task, input_set->base->attic_relations, input_set->tag_store_attic_relations);
-  eval_elems(*value_agg, *rhs_task, input_set->base->areas, input_set->tag_store_areas);
-  eval_elems(*value_agg, *rhs_task, input_set->base->deriveds, input_set->tag_store_deriveds);
+  eval_elems(*value_agg, *rhs_task, input_set->base->nodes, *input_set, key);
+  eval_elems(*value_agg, *rhs_task, input_set->base->attic_nodes, *input_set, key);
+  eval_elems(*value_agg, *rhs_task, input_set->base->ways, *input_set, key);
+  eval_elems(*value_agg, *rhs_task, input_set->base->attic_ways, *input_set, key);
+  eval_elems(*value_agg, *rhs_task, input_set->base->relations, *input_set, key);
+  eval_elems(*value_agg, *rhs_task, input_set->base->attic_relations, *input_set, key);
+  eval_elems(*value_agg, *rhs_task, input_set->base->areas, *input_set, key);
+  eval_elems(*value_agg, *rhs_task, input_set->base->deriveds, *input_set, key);
 
   return new Const_Eval_Task((*value_agg).get_value());
 }
 
 
-std::pair< std::vector< Set_Usage >, uint > Evaluator_Aggregator::used_sets() const
+Eval_Geometry_Task* Evaluator_Aggregator::get_geometry_task(Prepare_Task_Context& context)
+{
+  if (!rhs)
+    return 0;
+
+  Owner< Eval_Geometry_Task > rhs_task(rhs->get_geometry_task(context));
+  if (!rhs_task)
+    return 0;
+
+  Set_With_Context* input_set = context.get_set(input);
+  if (!input_set || !input_set->base)
+    return 0;
+
+  Owner< Geometry_Aggregator > value_agg(get_geometry_aggregator());
+  if (!value_agg)
+    return 0;
+
+  eval_elems(*value_agg, *rhs_task, input_set->base->nodes, *input_set);
+  eval_elems(*value_agg, *rhs_task, input_set->base->attic_nodes, *input_set);
+  eval_elems(*value_agg, *rhs_task, input_set->base->ways, *input_set);
+  eval_elems(*value_agg, *rhs_task, input_set->base->attic_ways, *input_set);
+  eval_elems(*value_agg, *rhs_task, input_set->base->relations, *input_set);
+  eval_elems(*value_agg, *rhs_task, input_set->base->attic_relations, *input_set);
+  eval_elems(*value_agg, *rhs_task, input_set->base->areas, *input_set);
+  eval_elems(*value_agg, *rhs_task, input_set->base->deriveds, *input_set);
+
+  return new Const_Eval_Geometry_Task((*value_agg).move_value());
+}
+
+
+Requested_Context Evaluator_Aggregator::request_context() const
 {
   if (rhs)
   {
-    std::pair< std::vector< Set_Usage >, uint > result = rhs->used_sets();
-    std::vector< Set_Usage >::iterator it =
-        std::lower_bound(result.first.begin(), result.first.end(), Set_Usage(input, 0u));
-    if (it == result.first.end() || it->set_name != input)
-      result.first.insert(it, Set_Usage(input, result.second));
-    else
-      it->usage |= result.second;
+    Requested_Context result = rhs->request_context();
+    result.bind(input);
     return result;
   }
 
-  std::vector< Set_Usage > result;
-  result.push_back(Set_Usage(input, 0u));
-  return std::make_pair(result, 0u);
+  return Requested_Context();
 }
 
 
@@ -155,6 +194,7 @@ bool try_parse_input_set(const Token_Node_Ptr& tree_it, Error_Output* error_outp
 
 
 Aggregator_Statement_Maker< Evaluator_Union_Value > Evaluator_Union_Value::statement_maker;
+Aggregator_Evaluator_Maker< Evaluator_Union_Value > Evaluator_Union_Value::evaluator_maker;
 
 
 void Evaluator_Union_Value::Aggregator::update_value(const std::string& value)
@@ -168,6 +208,7 @@ void Evaluator_Union_Value::Aggregator::update_value(const std::string& value)
 
 
 Aggregator_Statement_Maker< Evaluator_Min_Value > Evaluator_Min_Value::statement_maker;
+Aggregator_Evaluator_Maker< Evaluator_Min_Value > Evaluator_Min_Value::evaluator_maker;
 
 
 void Evaluator_Min_Value::Aggregator::update_value(const std::string& value)
@@ -215,6 +256,7 @@ std::string Evaluator_Min_Value::Aggregator::get_value()
 
 
 Aggregator_Statement_Maker< Evaluator_Max_Value > Evaluator_Max_Value::statement_maker;
+Aggregator_Evaluator_Maker< Evaluator_Max_Value > Evaluator_Max_Value::evaluator_maker;
 
 
 void Evaluator_Max_Value::Aggregator::update_value(const std::string& value)
@@ -262,6 +304,7 @@ std::string Evaluator_Max_Value::Aggregator::get_value()
 
 
 Aggregator_Statement_Maker< Evaluator_Sum_Value > Evaluator_Sum_Value::statement_maker;
+Aggregator_Evaluator_Maker< Evaluator_Sum_Value > Evaluator_Sum_Value::evaluator_maker;
 
 
 void Evaluator_Sum_Value::Aggregator::update_value(const std::string& value)
@@ -301,6 +344,7 @@ std::string Evaluator_Sum_Value::Aggregator::get_value()
 
 
 Aggregator_Statement_Maker< Evaluator_Set_Value > Evaluator_Set_Value::statement_maker;
+Aggregator_Evaluator_Maker< Evaluator_Set_Value > Evaluator_Set_Value::evaluator_maker;
 
 
 void Evaluator_Set_Value::Aggregator::update_value(const std::string& value)
@@ -329,50 +373,55 @@ std::string Evaluator_Set_Value::Aggregator::get_value()
 
 
 Evaluator_Set_Count::Statement_Maker Evaluator_Set_Count::statement_maker;
+Evaluator_Set_Count::Evaluator_Maker Evaluator_Set_Count::evaluator_maker;
 
 
-Statement* Evaluator_Set_Count::Statement_Maker::create_statement(
+bool Evaluator_Set_Count::try_parse_object_type(const std::string& input, Evaluator_Set_Count::Objects& result)
+{
+  if (input == "nodes")
+    result = Evaluator_Set_Count::nodes;
+  else if (input == "ways")
+    result = Evaluator_Set_Count::ways;
+  else if (input == "relations")
+    result = Evaluator_Set_Count::relations;
+  else if (input == "deriveds")
+    result = Evaluator_Set_Count::deriveds;
+  else
+    return false;
+  return true;
+}
+
+
+Statement* Evaluator_Set_Count::Evaluator_Maker::create_evaluator(
     const Token_Node_Ptr& tree_it, Statement::QL_Context tree_context,
     Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output)
 {
+  if (!tree_it.assert_is_function(error_output)
+      || !tree_it.assert_has_arguments(error_output, true))
+    return 0;
+
   std::map< std::string, std::string > attributes;
 
   if (tree_it->token == "(")
   {
-    if (!tree_it->lhs)
-      return 0;
-    if (!tree_it->rhs)
-    {
-      if (error_output)
-        error_output->add_parse_error("count(object_type) needs an argument", tree_it->line_col.first);
-      return 0;
-    }
-
     attributes["from"] = "_";
     attributes["type"] = tree_it.rhs()->token;
   }
   else
   {
-    if (!tree_it->lhs)
-      return 0;
-    if (!tree_it->rhs || !tree_it.rhs()->rhs)
-    {
-      if (error_output)
-        error_output->add_parse_error("count(object_type) needs an argument", tree_it->line_col.first);
-      return 0;
-    }
-    if (!tree_it.rhs()->lhs)
-    {
-      if (error_output)
-        error_output->add_parse_error("Input set required if dot is present", tree_it->line_col.first);
-      return 0;
-    }
-
     attributes["from"] = tree_it.lhs()->token;
     attributes["type"] = tree_it.rhs().rhs()->token;
   }
 
-  return new Evaluator_Set_Count(tree_it->line_col.first, attributes, global_settings);
+  Objects to_count;
+  if (try_parse_object_type(attributes["type"], to_count))
+    return new Evaluator_Set_Count(tree_it->line_col.first, attributes, global_settings);
+  else if (error_output)
+    error_output->add_parse_error(
+        "\"count\" accepts only one of \"nodes\", \"ways\", \"relations\", or \"deriveds\" as type argument.",
+        tree_it->line_col.first);
+
+  return 0;
 }
 
 
@@ -403,35 +452,27 @@ Evaluator_Set_Count::Evaluator_Set_Count
 
   input = attributes["from"];
 
-  if (attributes["type"] == "nodes")
-    to_count = nodes;
-  else if (attributes["type"] == "ways")
-    to_count = ways;
-  else if (attributes["type"] == "relations")
-    to_count = relations;
-  else if (attributes["type"] == "deriveds")
-    to_count = deriveds;
-  else
+  if (!try_parse_object_type(attributes["type"], to_count))
   {
     std::ostringstream temp("");
-    temp<<"For the attribute \"type\" of the element \"eval-std::set-count\""
+    temp<<"For the attribute \"type\" of the element \"eval-set-count\""
         <<" the only allowed values are \"nodes\", \"ways\", \"relations\", or \"deriveds\" strings.";
     add_static_error(temp.str());
   }
 }
 
 
-std::pair< std::vector< Set_Usage >, uint > Evaluator_Set_Count::used_sets() const
+Requested_Context Evaluator_Set_Count::request_context() const
 {
-  std::vector< Set_Usage > result;
+  Requested_Context result;
   if (to_count == Evaluator_Set_Count::nodes || to_count == Evaluator_Set_Count::ways
         || to_count == Evaluator_Set_Count::relations || to_count == Evaluator_Set_Count::deriveds)
-    result.push_back(Set_Usage(input, 1u));
-  return std::make_pair(result, 0u);
+    result.add_usage(input, 1u);
+  return result;
 }
 
 
-Eval_Task* Evaluator_Set_Count::get_task(const Prepare_Task_Context& context)
+Eval_Task* Evaluator_Set_Count::get_string_task(Prepare_Task_Context& context, const std::string* key)
 {
   const Set_With_Context* set = context.get_set(input);
 
@@ -449,4 +490,31 @@ Eval_Task* Evaluator_Set_Count::get_task(const Prepare_Task_Context& context)
   }
 
   return new Const_Eval_Task(::to_string(counter));
+}
+
+
+//-----------------------------------------------------------------------------
+
+
+Aggregator_Statement_Maker< Evaluator_Geom_Concat_Value > Evaluator_Geom_Concat_Value::statement_maker;
+Aggregator_Evaluator_Maker< Evaluator_Geom_Concat_Value > Evaluator_Geom_Concat_Value::evaluator_maker;
+
+
+void Evaluator_Geom_Concat_Value::Aggregator::consume_value(Opaque_Geometry* geom)
+{
+  if (!geom)
+    return;
+
+  if (!result)
+    result = new Compound_Geometry();
+
+  result->add_component(geom);
+}
+
+
+Opaque_Geometry* Evaluator_Geom_Concat_Value::Aggregator::move_value()
+{
+  Opaque_Geometry* result_ = result;
+  result = 0;
+  return result_;
 }

@@ -26,6 +26,7 @@
 #include "../core/datatypes.h"
 #include "../core/parsed_query.h"
 #include "../core/settings.h"
+#include "../data/diff_set.h"
 #include "../dispatch/resource_manager.h"
 #include "../frontend/tokenizer_utils.h"
 #include "../osm-backend/area_updater.h"
@@ -40,7 +41,8 @@ class Query_Constraint
 			 const std::vector< Uint64 >& ids, bool invert_ids) { return false; }
     virtual bool collect(Resource_Manager& rman, Set& into,
 			 int type, const std::vector< Uint32_Index >& ids, bool invert_ids) { return false; }
-			
+    virtual bool collect(Resource_Manager& rman, Set& into) { return false; }
+
     virtual bool get_ranges
         (Resource_Manager& rman, std::set< std::pair< Uint31_Index, Uint31_Index > >& ranges)
       { return false; }
@@ -61,21 +63,21 @@ class Query_Constraint
     virtual bool get_data(const Statement& query, Resource_Manager& rman, Set& into,
 			  const std::set< std::pair< Uint32_Index, Uint32_Index > >& ranges,
 			  const std::vector< Node::Id_Type >& ids,
-                          bool invert_ids, uint64 timestamp)
+                          bool invert_ids)
       { return false; }
     virtual bool get_data(const Statement& query, Resource_Manager& rman, Set& into,
 			  const std::set< std::pair< Uint31_Index, Uint31_Index > >& ranges,
 			  int type,
                           const std::vector< Uint32_Index >& ids,
-                          bool invert_ids, uint64 timestamp)
+                          bool invert_ids)
       { return false; }
 
     // Cheap filter. No health_check in between needed and should be called first.
-    virtual void filter(Resource_Manager& rman, Set& into, uint64 timestamp) {}
+    virtual void filter(Resource_Manager& rman, Set& into) {}
 
     // Expensive filter. Health_check may be needed in between. These are called last
     // to minimize the number of elements that need to be processed.
-    virtual void filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp) {}
+    virtual void filter(const Statement& query, Resource_Manager& rman, Set& into) {}
 
     virtual ~Query_Constraint() {}
 };
@@ -88,14 +90,41 @@ class Statement
   public:
     enum QL_Context { generic, in_convert, evaluator_expected, elem_eval_possible };
 
+    enum Eval_Return_Type { non_evaluator, string, container, geometry };
+    static std::string eval_to_string(Statement::Eval_Return_Type eval_type);
+
+    struct Return_Type_Checker
+    {
+      virtual bool eval_required() const = 0;
+      virtual bool matches(Eval_Return_Type eval_type) const = 0;
+      virtual std::string expectation() const = 0;
+      virtual ~Return_Type_Checker() {}
+    };
+
+    struct Single_Return_Type_Checker : Return_Type_Checker
+    {
+      Single_Return_Type_Checker(Eval_Return_Type expected_) : expected(expected_) {}
+
+      virtual bool eval_required() const { return true; }
+      virtual bool matches(Eval_Return_Type eval_type) const { return eval_type == expected; }
+      virtual std::string expectation() const { return eval_to_string(expected); }
+      virtual ~Single_Return_Type_Checker() {}
+
+    private:
+      Eval_Return_Type expected;
+    };
+
     struct Factory
     {
       Factory(Parsed_Query& global_settings_) : error_output_(error_output), global_settings(global_settings_) {}
       ~Factory();
 
       Statement* create_statement(std::string element, int line_number,
-				  const std::map< std::string, std::string >& attributes);
-      Statement* create_statement(const Token_Node_Ptr& tree_it, QL_Context tree_context);
+          const std::map< std::string, std::string >& attributes);
+      Statement* create_evaluator(
+          const Token_Node_Ptr& tree_it, QL_Context tree_context, const Statement::Return_Type_Checker& eval_type);
+      Statement* create_criterion(const Token_Node_Ptr& tree_it,
+          const std::string& type, bool& can_standalone, const std::string& into);
 
       std::vector< Statement* > created_statements;
       Error_Output* error_output_;
@@ -106,14 +135,29 @@ class Statement
     {
       virtual Statement* create_statement
           (int line_number, const std::map< std::string, std::string >& attributes, Parsed_Query& global_settings) = 0;
-      virtual Statement* create_statement(const Token_Node_Ptr& tree_it, QL_Context tree_context,
-          Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output) = 0;
       virtual ~Statement_Maker() {}
     };
 
+    struct Criterion_Maker
+    {
+      virtual bool can_standalone(const std::string& type) = 0;
+      virtual Statement* create_criterion(const Token_Node_Ptr& tree_it,
+          const std::string& type, const std::string& into,
+          Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output) = 0;
+      virtual ~Criterion_Maker() {}
+    };
+
+    struct Evaluator_Maker
+    {
+      virtual Statement* create_evaluator(const Token_Node_Ptr& tree_it, QL_Context tree_context,
+          Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output) = 0;
+      virtual ~Evaluator_Maker() {}
+    };
+
     static std::map< std::string, Statement_Maker* >& maker_by_name();
-    static std::map< std::string, std::vector< Statement_Maker* > >& maker_by_token();
-    static std::map< std::string, std::vector< Statement_Maker* > >& maker_by_func_name();
+    static std::map< std::string, Criterion_Maker* >& maker_by_ql_criterion();
+    static std::map< std::string, std::vector< Evaluator_Maker* > >& maker_by_token();
+    static std::map< std::string, std::vector< Evaluator_Maker* > >& maker_by_func_name();
 
     Statement(int line_number_) : line_number(line_number_), progress(0) {}
 
@@ -193,12 +237,6 @@ class Generic_Statement_Maker : public Statement::Statement_Maker
       return new TStatement(line_number, attributes, global_settings);
     }
 
-    virtual Statement* create_statement(const Token_Node_Ptr& tree_it, Statement::QL_Context tree_context,
-        Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output)
-    {
-      return 0;
-    }
-
     Generic_Statement_Maker(const std::string& name) { Statement::maker_by_name()[name] = this; }
     virtual ~Generic_Statement_Maker() {}
 };
@@ -212,12 +250,13 @@ class Output_Statement : public Statement
     virtual std::string get_result_name() const { return output; }
 
     std::string dump_ql_result_name() const { return output != "_" ? std::string("->.") + output : ""; }
-    std::string dump_xml_result_name() const { return output != "_" ? std::string("into=\"") + output + "\"" : ""; }
+    std::string dump_xml_result_name() const { return output != "_" ? std::string(" into=\"") + output + "\"" : ""; }
 
   protected:
     void set_output(std::string output_) { output = output_; }
 
     void transfer_output(Resource_Manager& rman, Set& into) const;
+    void transfer_output(Resource_Manager& rman, Diff_Set& into) const;
 
   private:
     std::string output;

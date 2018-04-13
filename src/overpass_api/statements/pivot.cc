@@ -25,7 +25,24 @@
 #include "query.h"
 
 
-Generic_Statement_Maker< Pivot_Statement > Pivot_Statement::statement_maker("pivot");
+Pivot_Statement::Statement_Maker Pivot_Statement::statement_maker;
+Pivot_Statement::Criterion_Maker Pivot_Statement::criterion_maker;
+
+
+Statement* Pivot_Statement::Criterion_Maker::create_criterion(const Token_Node_Ptr& tree_it,
+    const std::string& type, const std::string& into,
+    Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output)
+{
+  uint line_nr = tree_it->line_col.first;
+  std::string from = "_";
+  if (tree_it->rhs && tree_it->token == ".")
+      from = tree_it.rhs()->token;
+
+  std::map< std::string, std::string > attributes;
+  attributes["from"] = from;
+  attributes["into"] = into;
+  return new Pivot_Statement(line_nr, attributes, global_settings);
+}
 
 
 template< class TIndex, class TObject >
@@ -134,13 +151,13 @@ class Pivot_Constraint : public Query_Constraint
     virtual bool get_data(const Statement& query, Resource_Manager& rman, Set& into,
                           const std::set< std::pair< Uint32_Index, Uint32_Index > >& ranges,
                           const std::vector< Node::Id_Type >& ids,
-                          bool invert_ids, uint64 timestamp);
+                          bool invert_ids);
     virtual bool get_data(const Statement& query, Resource_Manager& rman, Set& into,
                           const std::set< std::pair< Uint31_Index, Uint31_Index > >& ranges,
                           int type,
                           const std::vector< Uint32_Index >& ids,
-                          bool invert_ids, uint64 timestamp);
-    void filter(Resource_Manager& rman, Set& into, uint64 timestamp);
+                          bool invert_ids);
+    void filter(Resource_Manager& rman, Set& into);
     virtual ~Pivot_Constraint() {}
 
   private:
@@ -152,9 +169,12 @@ bool Pivot_Constraint::get_data
     (const Statement& query, Resource_Manager& rman, Set& into,
      const std::set< std::pair< Uint32_Index, Uint32_Index > >& ranges,
      const std::vector< Node_Skeleton::Id_Type >& ids,
-     bool invert_ids, uint64 timestamp)
+     bool invert_ids)
 {
-  std::vector< Node::Id_Type > pivot_ids = get_node_pivot_ids(rman.sets()[stmt->get_input()].areas);
+  const Set* input_set = rman.get_set(stmt->get_input());
+  std::vector< Node::Id_Type > pivot_ids;
+  if (input_set)
+    pivot_ids = get_node_pivot_ids(input_set->areas);
   std::vector< Node::Id_Type > intersect_ids(pivot_ids.size());
   if (ids.empty())
     pivot_ids.swap(intersect_ids);
@@ -169,7 +189,7 @@ bool Pivot_Constraint::get_data
            ids.begin(), ids.end(),
           intersect_ids.begin()), intersect_ids.end());
   collect_elems(rman, *osm_base_settings().NODES, intersect_ids, into.nodes);
-		
+
   return true;
 }
 
@@ -179,11 +199,15 @@ bool Pivot_Constraint::get_data
      const std::set< std::pair< Uint31_Index, Uint31_Index > >& ranges,
      int type,
      const std::vector< Uint32_Index >& ids,
-     bool invert_ids, uint64 timestamp)
+     bool invert_ids)
 {
-  if (type == QUERY_WAY)
+  const Set* input_set = rman.get_set(stmt->get_input());
+
+  if (type & QUERY_WAY)
   {
-    std::vector< Way::Id_Type > pivot_ids = get_way_pivot_ids(rman.sets()[stmt->get_input()].areas);
+    std::vector< Way::Id_Type > pivot_ids;
+    if (input_set)
+      pivot_ids = get_way_pivot_ids(input_set->areas);
     std::vector< Way::Id_Type > intersect_ids(pivot_ids.size());
     if (ids.empty())
       pivot_ids.swap(intersect_ids);
@@ -199,9 +223,11 @@ bool Pivot_Constraint::get_data
           intersect_ids.begin()), intersect_ids.end());
     collect_elems(rman, *osm_base_settings().WAYS, intersect_ids, into.ways);
   }
-  else if (type == QUERY_RELATION)
+  if (type & QUERY_RELATION)
   {
-    std::vector< Relation::Id_Type > pivot_ids = get_relation_pivot_ids(rman.sets()[stmt->get_input()].areas);
+    std::vector< Relation::Id_Type > pivot_ids;
+    if (input_set)
+      pivot_ids = get_relation_pivot_ids(input_set->areas);
     std::vector< Relation::Id_Type > intersect_ids(pivot_ids.size());
     if (ids.empty())
       pivot_ids.swap(intersect_ids);
@@ -221,12 +247,27 @@ bool Pivot_Constraint::get_data
   return true;
 }
 
-void Pivot_Constraint::filter(Resource_Manager& rman, Set& into, uint64 timestamp)
+void Pivot_Constraint::filter(Resource_Manager& rman, Set& into)
 {
-  filter_elems(get_node_pivot_ids(rman.sets()[stmt->get_input()].areas), into.nodes);
-  filter_elems(get_way_pivot_ids(rman.sets()[stmt->get_input()].areas), into.ways);
-  filter_elems(get_relation_pivot_ids(rman.sets()[stmt->get_input()].areas), into.relations);
+  const Set* input_set = rman.get_set(stmt->get_input());
+
+  if (input_set)
+  {
+    filter_elems(get_node_pivot_ids(input_set->areas), into.nodes);
+    filter_elems(get_way_pivot_ids(input_set->areas), into.ways);
+    filter_elems(get_relation_pivot_ids(input_set->areas), into.relations);
+  }
+  else
+  {
+    into.nodes.clear();
+    into.ways.clear();
+    into.relations.clear();
+  }
+  into.attic_nodes.clear();
+  into.attic_ways.clear();
+  into.attic_relations.clear();
   into.areas.clear();
+  into.deriveds.clear();
 }
 
 //-----------------------------------------------------------------------------
@@ -251,10 +292,13 @@ void Pivot_Statement::execute(Resource_Manager& rman)
 {
   Set into;
 
-  collect_elems(rman, *osm_base_settings().NODES, get_node_pivot_ids(rman.sets()[input].areas), into.nodes);
-  collect_elems(rman, *osm_base_settings().WAYS, get_way_pivot_ids(rman.sets()[input].areas), into.ways);
-  collect_elems(rman, *osm_base_settings().RELATIONS,
-                get_relation_pivot_ids(rman.sets()[input].areas), into.relations);
+  const Set* input_set = rman.get_set(input);
+  if (input_set)
+  {
+    collect_elems(rman, *osm_base_settings().NODES, get_node_pivot_ids(input_set->areas), into.nodes);
+    collect_elems(rman, *osm_base_settings().WAYS, get_way_pivot_ids(input_set->areas), into.ways);
+    collect_elems(rman, *osm_base_settings().RELATIONS, get_relation_pivot_ids(input_set->areas), into.relations);
+  }
 
   transfer_output(rman, into);
   rman.health_check(*this);

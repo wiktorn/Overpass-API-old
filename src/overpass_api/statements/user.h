@@ -38,7 +38,25 @@ class User_Statement : public Output_Statement
     virtual void execute(Resource_Manager& rman);
     virtual ~User_Statement();
 
-    static Generic_Statement_Maker< User_Statement > statement_maker;
+    struct Statement_Maker : public Generic_Statement_Maker< User_Statement >
+    {
+      Statement_Maker() : Generic_Statement_Maker< User_Statement >("user") {}
+    };
+    static Statement_Maker statement_maker;
+
+    struct Criterion_Maker : public Statement::Criterion_Maker
+    {
+      virtual bool can_standalone(const std::string& type) { return true; }
+      virtual Statement* create_criterion(const Token_Node_Ptr& tree_it,
+          const std::string& type, const std::string& into,
+          Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output);
+      Criterion_Maker()
+      {
+        Statement::maker_by_ql_criterion()["uid"] = this;
+        Statement::maker_by_ql_criterion()["user"] = this;
+      }
+    };
+    static Criterion_Maker criterion_maker;
 
     virtual Query_Constraint* get_query_constraint();
 
@@ -46,7 +64,7 @@ class User_Statement : public Output_Statement
         (std::set< std::pair< Uint32_Index, Uint32_Index > >& node_req,
          std::set< std::pair< Uint31_Index, Uint31_Index > >& other_req,
          Transaction& transaction);
-	
+
     // Reads the user id from the database.
     std::set< Uint32_Index > get_ids(Transaction& transaction);
 
@@ -80,7 +98,7 @@ class User_Statement : public Output_Statement
 
     virtual std::string dump_compact_ql(const std::string&) const
     {
-      return result_type + dump_ql_in_query("") + dump_ql_result_name();
+      return result_type + dump_ql_in_query("") + dump_ql_result_name() + ";";
     }
     virtual std::string dump_pretty_ql(const std::string& indent) const { return indent + dump_compact_ql(indent); }
     virtual std::string dump_ql_in_query(const std::string&) const

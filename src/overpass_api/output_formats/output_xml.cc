@@ -1,5 +1,6 @@
 
 #include "../../expat/escape_xml.h"
+#include "../core/settings.h"
 #include "../frontend/basic_formats.h"
 #include "output_xml.h"
 
@@ -15,7 +16,8 @@ void Output_XML::write_payload_header
     (const std::string& db_dir, const std::string& timestamp, const std::string& area_timestamp)
 {
   std::cout<<
-  "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<osm version=\"0.6\" generator=\"Overpass API\">\n"
+  "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<osm version=\"0.6\""
+  " generator=\"Overpass API "<<basic_settings().version<<" "<<basic_settings().source_hash.substr(0, 8)<<"\">\n"
   "<note>The data included in this document is from www.openstreetmap.org. "
   "The data is made available under ODbL.</note>\n";
   std::cout<<"<meta osm_base=\""<<timestamp<<'\"';
@@ -66,16 +68,24 @@ void print_meta_xml(const OSM_Element_Metadata_Skeleton< Id_Type >& meta,
 }
 
 
-void prepend_action(const Output_Handler::Feature_Action& action)
+void prepend_action(const Output_Handler::Feature_Action& action, bool allow_delta = true)
 {
   if (action == Output_Handler::keep)
     ;
-  else if (action == Output_Handler::modify)
-    std::cout<<"<action type=\"modify\">\n<old>\n";
-  else if (action == Output_Handler::create)
-    std::cout<<"<action type=\"create\">\n";
-  else if (action == Output_Handler::erase || action == Output_Handler::push_away)
-    std::cout<<"<action type=\"delete\">\n<old>\n";
+  else if (action == Output_Handler::show_from)
+    std::cout<<"<action type=\"show_initial\">\n";
+  else if (action == Output_Handler::show_to)
+    std::cout<<"<action type=\"show_final\">\n";
+
+  if (allow_delta)
+  {
+    if (action == Output_Handler::modify)
+      std::cout<<"<action type=\"modify\">\n<old>\n";
+    else if (action == Output_Handler::create)
+      std::cout<<"<action type=\"create\">\n";
+    else if (action == Output_Handler::erase || action == Output_Handler::push_away)
+      std::cout<<"<action type=\"delete\">\n<old>\n";
+  }
 }
 
 
@@ -83,25 +93,32 @@ void insert_action(const Output_Handler::Feature_Action& action)
 {
   if (action == Output_Handler::keep)
     ;
-  else if (action == Output_Handler::modify || action == Output_Handler::erase || action == Output_Handler::push_away)
+  else if (action == Output_Handler::modify
+      || action == Output_Handler::erase || action == Output_Handler::push_away)
     std::cout<<"</old>\n<new>\n";
 }
 
 
-void append_action(const Output_Handler::Feature_Action& action, bool is_new = false)
+void append_action(const Output_Handler::Feature_Action& action, bool is_new = false, bool allow_delta = true)
 {
   if (action == Output_Handler::keep)
     ;
-  else if (action == Output_Handler::modify)
-    std::cout<<"</new>\n</action>\n";
-  else if (action == Output_Handler::create)
+  else if (action == Output_Handler::show_from || action == Output_Handler::show_to)
     std::cout<<"</action>\n";
-  else if (action == Output_Handler::erase || action == Output_Handler::push_away)
+
+  if (allow_delta)
   {
-    if (is_new)
+    if (action == Output_Handler::modify)
       std::cout<<"</new>\n</action>\n";
-    else
-      std::cout<<"</old>\n</action>\n";
+    else if (action == Output_Handler::create)
+      std::cout<<"</action>\n";
+    else if (action == Output_Handler::erase || action == Output_Handler::push_away)
+    {
+      if (is_new)
+        std::cout<<"</new>\n</action>\n";
+      else
+        std::cout<<"</old>\n</action>\n";
+    }
   }
 }
 
@@ -154,6 +171,102 @@ void print_bounds(const Opaque_Geometry& geometry, Output_Mode mode, bool& inner
 }
 
 
+void print_geometry(const Opaque_Geometry& geometry, Output_Mode mode, bool& inner_tags_printed,
+    const std::string& indent)
+{
+  if ((mode.mode & Output_Mode::GEOMETRY) && geometry.has_components())
+  {
+    if (!inner_tags_printed)
+    {
+      std::cout<<">\n";
+      inner_tags_printed = true;
+    }
+    const std::vector< Opaque_Geometry* >* components = geometry.get_components();
+    for (std::vector< Opaque_Geometry* >::const_iterator it = components->begin(); it != components->end(); ++it)
+    {
+      if (*it)
+      {
+        std::cout<<indent<<"<group>\n";
+        print_geometry(**it, mode, inner_tags_printed, indent + "  ");
+        std::cout<<indent<<"</group>\n";
+      }
+    }
+  }
+  else if ((mode.mode & Output_Mode::GEOMETRY) && geometry.has_line_geometry())
+  {
+    if (!inner_tags_printed)
+    {
+      std::cout<<">\n";
+      inner_tags_printed = true;
+    }
+    const std::vector< Point_Double >* line = geometry.get_line_geometry();
+    for (std::vector< Point_Double >::const_iterator it = line->begin(); it != line->end(); ++it)
+      std::cout<<indent<<"<vertex"
+          " lat=\""<<std::fixed<<std::setprecision(7)<<it->lat<<"\""
+          " lon=\""<<std::fixed<<std::setprecision(7)<<it->lon<<"\""
+          "/>\n";
+  }
+  else if ((mode.mode & Output_Mode::GEOMETRY) && geometry.has_multiline_geometry())
+  {
+    if (!inner_tags_printed)
+    {
+      std::cout<<">\n";
+      inner_tags_printed = true;
+    }
+    const std::vector< std::vector< Point_Double > >* linestrings = geometry.get_multiline_geometry();
+    for (std::vector< std::vector< Point_Double > >::const_iterator iti = linestrings->begin();
+        iti != linestrings->end(); ++iti)
+    {
+      std::cout<<indent<<"<linestring>\n";
+      for (std::vector< Point_Double >::const_iterator it = iti->begin(); it != iti->end(); ++it)
+        std::cout<<indent<<"  <vertex"
+            " lat=\""<<std::fixed<<std::setprecision(7)<<it->lat<<"\""
+            " lon=\""<<std::fixed<<std::setprecision(7)<<it->lon<<"\""
+            "/>\n";
+      std::cout<<indent<<"</linestring>\n";
+    }
+  }
+  else if ((mode.mode & Output_Mode::GEOMETRY) && geometry.has_center())
+  {
+    if (!inner_tags_printed)
+    {
+      std::cout<<">\n";
+      inner_tags_printed = true;
+    }
+    std::cout<<indent<<"<point"
+        " lat=\""<<std::fixed<<std::setprecision(7)<<geometry.center_lat()<<"\""
+        " lon=\""<<std::fixed<<std::setprecision(7)<<geometry.center_lon()<<"\""
+        "/>\n";
+  }
+  else if ((mode.mode & Output_Mode::BOUNDS) && geometry.has_bbox())
+  {
+    if (!inner_tags_printed)
+    {
+      std::cout<<">\n";
+      inner_tags_printed = true;
+    }
+    std::cout<<"    <bounds"
+        " minlat=\""<<std::fixed<<std::setprecision(7)<<geometry.south()<<"\""
+        " minlon=\""<<std::fixed<<std::setprecision(7)<<geometry.west()<<"\""
+        " maxlat=\""<<std::fixed<<std::setprecision(7)<<geometry.north()<<"\""
+        " maxlon=\""<<std::fixed<<std::setprecision(7)<<geometry.east()<<"\""
+        "/>\n";
+  }
+  else if ((mode.mode & Output_Mode::CENTER) && geometry.has_center())
+  {
+    if (!inner_tags_printed)
+    {
+      std::cout<<">\n";
+      inner_tags_printed = true;
+    }
+    std::cout<<indent<<"<center"
+        " lat=\""<<std::fixed<<std::setprecision(7)<<geometry.center_lat()<<"\""
+        " lon=\""<<std::fixed<<std::setprecision(7)<<geometry.center_lon()<<"\""
+        "/>\n";
+  }
+}
+
+
 void print_members(const Way_Skeleton& skel, const Opaque_Geometry& geometry,
 		   Output_Mode mode, bool& inner_tags_printed)
 {
@@ -193,7 +306,7 @@ void print_members(const Relation_Skeleton& skel, const Opaque_Geometry& geometr
       std::cout<<"    <member type=\""<<member_type_name(skel.members[i].type)
 	  <<"\" ref=\""<<skel.members[i].ref.val()
 	  <<"\" role=\""<<escape_xml(it != roles.end() ? it->second : "???")<<"\"";
-            
+
       if (skel.members[i].type == Relation_Entry::NODE)
       {
 	if (geometry.has_faithful_relation_geometry() && geometry.relation_pos_is_valid(i))
@@ -210,7 +323,7 @@ void print_members(const Relation_Skeleton& skel, const Opaque_Geometry& geometr
 	  bool has_some_geometry = false;
 	  for (uint j = 0; j < geometry.relation_way_size(i); ++j)
 	    has_some_geometry |= geometry.relation_pos_is_valid(i, j);
-	  
+
 	  if (!has_some_geometry)
 	    std::cout<<"/>\n";
 	  else
@@ -229,7 +342,7 @@ void print_members(const Relation_Skeleton& skel, const Opaque_Geometry& geometr
 	}
       }
       else
-        std::cout<<"/>\n";              
+        std::cout<<"/>\n";
     }
   }
 }
@@ -251,7 +364,7 @@ void print_node(const Node_Skeleton& skel,
         <<"\" lon=\""<<std::fixed<<std::setprecision(7)<<geometry.center_lon()<<'\"';
   if ((mode.mode & (Output_Mode::VERSION | Output_Mode::META)) && meta && users)
     print_meta_xml(*meta, *users);
-  
+
   bool inner_tags_printed = false;
   print_tags(tags, mode, inner_tags_printed);
   if (!inner_tags_printed)
@@ -273,7 +386,7 @@ void print_way(const Way_Skeleton& skel,
     std::cout<<" id=\""<<skel.id.val()<<'\"';
   if ((mode.mode & (Output_Mode::VERSION | Output_Mode::META)) && meta && users)
     print_meta_xml(*meta, *users);
-  
+
   bool inner_tags_printed = false;
   print_bounds(geometry, mode, inner_tags_printed);
   print_members(skel, geometry, mode, inner_tags_printed);
@@ -298,7 +411,7 @@ void print_relation(const Relation_Skeleton& skel,
     std::cout<<" id=\""<<skel.id.val()<<'\"';
   if ((mode.mode & (Output_Mode::VERSION | Output_Mode::META)) && meta && users)
     print_meta_xml(*meta, *users);
-  
+
   bool inner_tags_printed = false;
   print_bounds(geometry, mode, inner_tags_printed);
   if (roles)
@@ -326,7 +439,7 @@ void print_deleted(const std::string& type_name, const Id_Type& id,
   else
     std::cout<<" visible=\"true\"";
   if ((mode.mode & (Output_Mode::VERSION | Output_Mode::META)) && meta && users)
-    print_meta_xml(*meta, *users);  
+    print_meta_xml(*meta, *users);
   std::cout<<"/>\n";
 }
 
@@ -344,19 +457,19 @@ void Output_XML::print_item(const Node_Skeleton& skel,
       const OSM_Element_Metadata_Skeleton< Node::Id_Type >* new_meta)
 {
   prepend_action(action);
-  
+
   print_node(skel, geometry, tags, meta, users, mode);
-  
+
   if (new_skel)
   {
     insert_action(action);
-    
+
     if (action == Output_Handler::erase || action == Output_Handler::push_away)
-      print_deleted("node", new_skel->id, action, new_meta, users, mode); 
+      print_deleted("node", new_skel->id, action, new_meta, users, mode);
     else
-      print_node(*new_skel, *new_geometry, new_tags, new_meta, users, mode); 
+      print_node(*new_skel, *new_geometry, new_tags, new_meta, users, mode);
   }
-  
+
   append_action(action, new_skel);
 }
 
@@ -368,25 +481,25 @@ void Output_XML::print_item(const Way_Skeleton& skel,
       const std::map< uint32, std::string >* users,
       Output_Mode mode,
       const Feature_Action& action,
-      const Way_Skeleton* new_skel,      
+      const Way_Skeleton* new_skel,
       const Opaque_Geometry* new_geometry,
       const std::vector< std::pair< std::string, std::string > >* new_tags,
       const OSM_Element_Metadata_Skeleton< Way::Id_Type >* new_meta)
 {
   prepend_action(action);
-  
+
   print_way(skel, geometry, tags, meta, users, mode);
-  
+
   if (new_skel)
   {
     insert_action(action);
-    
+
     if (action == Output_Handler::erase || action == Output_Handler::push_away)
-      print_deleted("way", new_skel->id, action, new_meta, users, mode); 
+      print_deleted("way", new_skel->id, action, new_meta, users, mode);
     else
-      print_way(*new_skel, *new_geometry, new_tags, new_meta, users, mode);    
+      print_way(*new_skel, *new_geometry, new_tags, new_meta, users, mode);
   }
-  
+
   append_action(action, new_skel);
 }
 
@@ -405,19 +518,19 @@ void Output_XML::print_item(const Relation_Skeleton& skel,
       const OSM_Element_Metadata_Skeleton< Relation::Id_Type >* new_meta)
 {
   prepend_action(action);
-  
+
   print_relation(skel, geometry, tags, meta, roles, users, mode);
-  
+
   if (new_skel)
   {
     insert_action(action);
-    
+
     if (action == Output_Handler::erase || action == Output_Handler::push_away)
       print_deleted("relation", new_skel->id, action, new_meta, users, mode);
     else
       print_relation(*new_skel, *new_geometry, new_tags, new_meta, roles, users, mode);
   }
-  
+
   append_action(action, new_skel);
 }
 
@@ -425,17 +538,22 @@ void Output_XML::print_item(const Relation_Skeleton& skel,
 void Output_XML::print_item(const Derived_Skeleton& skel,
       const Opaque_Geometry& geometry,
       const std::vector< std::pair< std::string, std::string > >* tags,
-      Output_Mode mode)
+      Output_Mode mode,
+      const Feature_Action& action)
 {
+  prepend_action(action, true);
+
   std::cout<<"  <"<<skel.type_name;
   if (mode.mode & Output_Mode::ID)
     std::cout<<" id=\""<<skel.id.val()<<'\"';
-  
+
   bool inner_tags_printed = false;
-  print_bounds(geometry, mode, inner_tags_printed);
+  print_geometry(geometry, mode, inner_tags_printed, "    ");
   print_tags(tags, mode, inner_tags_printed);
   if (!inner_tags_printed)
     std::cout<<"/>\n";
   else
     std::cout<<"  </"<<skel.type_name<<">\n";
+
+  append_action(action, false, true);
 }

@@ -41,6 +41,14 @@ struct Value_Aggregator
 };
 
 
+struct Geometry_Aggregator
+{
+  virtual void consume_value(Opaque_Geometry* geom) = 0;
+  virtual Opaque_Geometry* move_value() = 0;
+  virtual ~Geometry_Aggregator() {}
+};
+
+
 /* == Aggregators ==
 
 Aggregators need for execution both a set to operate on and an evaluator as argument.
@@ -52,21 +60,22 @@ struct Evaluator_Aggregator : public Evaluator
   enum Object_Type { tag, generic, id, type };
 
 
-  Evaluator_Aggregator(const std::string& func_name, int line_number_, const std::map< std::string, std::string >& input_attributes,
-                   Parsed_Query& global_settings);
+  Evaluator_Aggregator(const std::string& func_name,
+      int line_number_, const std::map< std::string, std::string >& input_attributes,
+      Parsed_Query& global_settings);
   virtual void add_statement(Statement* statement, std::string text);
   virtual void execute(Resource_Manager& rman) {}
 
-  virtual std::pair< std::vector< Set_Usage >, uint > used_sets() const;
-  virtual std::vector< std::string > used_tags() const { return std::vector< std::string >(); }
+  virtual Requested_Context request_context() const;
 
-  virtual Eval_Task* get_task(const Prepare_Task_Context& context);
+  virtual Eval_Task* get_string_task(Prepare_Task_Context& context, const std::string* key);
+  virtual Eval_Geometry_Task* get_geometry_task(Prepare_Task_Context& context);
 
   virtual Value_Aggregator* get_aggregator() = 0;
+  virtual Geometry_Aggregator* get_geometry_aggregator() = 0;
 
   std::string input;
   Evaluator* rhs;
-  const Set_With_Context* input_set;
 };
 
 
@@ -77,7 +86,14 @@ bool try_parse_input_set(const Token_Node_Ptr& tree_it, Error_Output* error_outp
 template< typename Evaluator_ >
 struct Aggregator_Statement_Maker : public Generic_Statement_Maker< Evaluator_ >
 {
-  virtual Statement* create_statement(
+  Aggregator_Statement_Maker() : Generic_Statement_Maker< Evaluator_ >(Evaluator_::stmt_name()) {}
+};
+
+
+template< typename Evaluator_ >
+struct Aggregator_Evaluator_Maker : Statement::Evaluator_Maker
+{
+  virtual Statement* create_evaluator(
       const Token_Node_Ptr& tree_it, Statement::QL_Context tree_context,
       Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output)
   {
@@ -90,8 +106,9 @@ struct Aggregator_Statement_Maker : public Generic_Statement_Maker< Evaluator_ >
     Statement* result = new Evaluator_(tree_it->line_col.first, attributes, global_settings);
     if (result)
     {
-      Statement* rhs = stmt_factory.create_statement(
-          input_set ? tree_it.rhs().rhs() : tree_it.rhs(), Statement::elem_eval_possible);
+      Statement* rhs = stmt_factory.create_evaluator(
+          input_set ? tree_it.rhs().rhs() : tree_it.rhs(),
+          Statement::elem_eval_possible, Statement::Single_Return_Type_Checker(Evaluator_::argument_type()));
       if (rhs)
         result->add_statement(rhs, "");
       else if (error_output)
@@ -101,7 +118,7 @@ struct Aggregator_Statement_Maker : public Generic_Statement_Maker< Evaluator_ >
     return result;
   }
 
-  Aggregator_Statement_Maker() : Generic_Statement_Maker< Evaluator_ >(Evaluator_::stmt_name())
+  Aggregator_Evaluator_Maker()
   {
     Statement::maker_by_func_name()[Evaluator_::stmt_func_name()].push_back(this);
   }
@@ -130,8 +147,8 @@ struct Evaluator_Aggregator_Syntax : public Evaluator_Aggregator
         + ")";
   }
 
+  virtual Statement::Eval_Return_Type return_type() const { return Evaluator_::argument_type(); };
   virtual std::string get_name() const { return Evaluator_::stmt_name(); }
-
   virtual std::string get_result_name() const { return ""; }
 };
 
@@ -165,8 +182,10 @@ class Evaluator_Union_Value : public Evaluator_Aggregator_Syntax< Evaluator_Unio
 {
 public:
   static Aggregator_Statement_Maker< Evaluator_Union_Value > statement_maker;
+  static Aggregator_Evaluator_Maker< Evaluator_Union_Value > evaluator_maker;
   static std::string stmt_func_name() { return "u"; }
   static std::string stmt_name() { return "eval-union"; }
+  static Statement::Eval_Return_Type argument_type() { return Statement::string; };
 
   Evaluator_Union_Value(int line_number_, const std::map< std::string, std::string >& input_attributes,
       Parsed_Query& global_settings)
@@ -179,6 +198,7 @@ public:
     std::string agg_value;
   };
   virtual Value_Aggregator* get_aggregator() { return new Aggregator(); }
+  virtual Geometry_Aggregator* get_geometry_aggregator() { return 0; }
 };
 
 
@@ -186,8 +206,10 @@ class Evaluator_Set_Value : public Evaluator_Aggregator_Syntax< Evaluator_Set_Va
 {
 public:
   static Aggregator_Statement_Maker< Evaluator_Set_Value > statement_maker;
+  static Aggregator_Evaluator_Maker< Evaluator_Set_Value > evaluator_maker;
   static std::string stmt_func_name() { return "set"; }
   static std::string stmt_name() { return "eval-set"; }
+  static Statement::Eval_Return_Type argument_type() { return Statement::string; };
 
   Evaluator_Set_Value(int line_number_, const std::map< std::string, std::string >& input_attributes,
       Parsed_Query& global_settings)
@@ -200,6 +222,7 @@ public:
     std::set< std::string > values;
   };
   virtual Value_Aggregator* get_aggregator() { return new Aggregator(); }
+  virtual Geometry_Aggregator* get_geometry_aggregator() { return 0; }
 };
 
 
@@ -233,8 +256,10 @@ class Evaluator_Min_Value : public Evaluator_Aggregator_Syntax< Evaluator_Min_Va
 {
 public:
   static Aggregator_Statement_Maker< Evaluator_Min_Value > statement_maker;
+  static Aggregator_Evaluator_Maker< Evaluator_Min_Value > evaluator_maker;
   static std::string stmt_func_name() { return "min"; }
   static std::string stmt_name() { return "eval-min"; }
+  static Statement::Eval_Return_Type argument_type() { return Statement::string; };
 
   Evaluator_Min_Value(int line_number_, const std::map< std::string, std::string >& input_attributes,
       Parsed_Query& global_settings)
@@ -252,6 +277,7 @@ public:
     std::string result_s;
   };
   virtual Value_Aggregator* get_aggregator() { return new Aggregator(); }
+  virtual Geometry_Aggregator* get_geometry_aggregator() { return 0; }
 };
 
 
@@ -259,8 +285,10 @@ class Evaluator_Max_Value : public Evaluator_Aggregator_Syntax< Evaluator_Max_Va
 {
 public:
   static Aggregator_Statement_Maker< Evaluator_Max_Value > statement_maker;
+  static Aggregator_Evaluator_Maker< Evaluator_Max_Value > evaluator_maker;
   static std::string stmt_func_name() { return "max"; }
   static std::string stmt_name() { return "eval-umax"; }
+  static Statement::Eval_Return_Type argument_type() { return Statement::string; };
 
   Evaluator_Max_Value(int line_number_, const std::map< std::string, std::string >& input_attributes,
       Parsed_Query& global_settings)
@@ -278,6 +306,7 @@ public:
     std::string result_s;
   };
   virtual Value_Aggregator* get_aggregator() { return new Aggregator(); }
+  virtual Geometry_Aggregator* get_geometry_aggregator() { return 0; }
 };
 
 
@@ -300,8 +329,10 @@ class Evaluator_Sum_Value : public Evaluator_Aggregator_Syntax< Evaluator_Sum_Va
 {
 public:
   static Aggregator_Statement_Maker< Evaluator_Sum_Value > statement_maker;
+  static Aggregator_Evaluator_Maker< Evaluator_Sum_Value > evaluator_maker;
   static std::string stmt_func_name() { return "sum"; }
   static std::string stmt_name() { return "eval-sum"; }
+  static Statement::Eval_Return_Type argument_type() { return Statement::string; };
 
   Evaluator_Sum_Value(int line_number_, const std::map< std::string, std::string >& input_attributes,
       Parsed_Query& global_settings)
@@ -317,6 +348,7 @@ public:
     double result_d;
   };
   virtual Value_Aggregator* get_aggregator() { return new Aggregator(); }
+  virtual Geometry_Aggregator* get_geometry_aggregator() { return 0; }
 };
 
 
@@ -346,15 +378,21 @@ class Evaluator_Set_Count : public Evaluator
 public:
   enum Objects { nothing, nodes, ways, relations, deriveds };
   static std::string to_string(Objects objects);
+  static bool try_parse_object_type(const std::string& input, Evaluator_Set_Count::Objects& result);
 
   struct Statement_Maker : public Generic_Statement_Maker< Evaluator_Set_Count >
   {
-    virtual Statement* create_statement(const Token_Node_Ptr& tree_it, QL_Context tree_context,
-        Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output);
-    Statement_Maker() : Generic_Statement_Maker< Evaluator_Set_Count >("eval-set-count")
-    { Statement::maker_by_func_name()["count"].push_back(this); }
+    Statement_Maker() : Generic_Statement_Maker< Evaluator_Set_Count >("eval-set-count") {}
   };
   static Statement_Maker statement_maker;
+
+  struct Evaluator_Maker : public Statement::Evaluator_Maker
+  {
+    virtual Statement* create_evaluator(const Token_Node_Ptr& tree_it, QL_Context tree_context,
+        Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output);
+    Evaluator_Maker() { Statement::maker_by_func_name()["count"].push_back(this); }
+  };
+  static Evaluator_Maker evaluator_maker;
 
   virtual std::string dump_xml(const std::string& indent) const
   { return indent + "<eval-set-count from=\"" + input + "\" type=\"" + to_string(to_count) + "\"/>\n"; }
@@ -368,14 +406,56 @@ public:
   virtual void execute(Resource_Manager& rman) {}
   virtual ~Evaluator_Set_Count() {}
 
-  virtual std::pair< std::vector< Set_Usage >, uint > used_sets() const;
-  virtual std::vector< std::string > used_tags() const { return std::vector< std::string >(); }
+  virtual Requested_Context request_context() const;
 
-  virtual Eval_Task* get_task(const Prepare_Task_Context& context);
+  virtual Statement::Eval_Return_Type return_type() const { return Statement::string; };
+  virtual Eval_Task* get_string_task(Prepare_Task_Context& context, const std::string* key);
 
 private:
   std::string input;
   Objects to_count;
+};
+
+
+/* === Union of Geometry ===
+
+The basic syntax is
+
+  <Set>.gcat(<Evaluator>)
+
+If the set is the default set <em>_</em> then you can drop the set parameter:
+
+  gcat(<Evaluator>)
+
+The evaluator executes its right hand side evaluator on each element of the specified set.
+It then combines the obtained geometries in one large object.
+If geometries are contained multiple times in the group
+then they are as well repeated as members of the result.
+*/
+
+class Evaluator_Geom_Concat_Value : public Evaluator_Aggregator_Syntax< Evaluator_Geom_Concat_Value >
+{
+public:
+  static Aggregator_Statement_Maker< Evaluator_Geom_Concat_Value > statement_maker;
+  static Aggregator_Evaluator_Maker< Evaluator_Geom_Concat_Value > evaluator_maker;
+  static std::string stmt_func_name() { return "gcat"; }
+  static std::string stmt_name() { return "eval-geom-concat"; }
+  static Statement::Eval_Return_Type argument_type() { return Statement::geometry; };
+
+  Evaluator_Geom_Concat_Value(int line_number_, const std::map< std::string, std::string >& input_attributes,
+      Parsed_Query& global_settings)
+      : Evaluator_Aggregator_Syntax< Evaluator_Geom_Concat_Value >(
+          line_number_, input_attributes, global_settings) {}
+
+  struct Aggregator : Geometry_Aggregator
+  {
+    Aggregator() : result(0) {}
+    virtual void consume_value(Opaque_Geometry* geom);
+    virtual Opaque_Geometry* move_value();
+    Compound_Geometry* result;
+  };
+  virtual Value_Aggregator* get_aggregator() { return 0; }
+  virtual Geometry_Aggregator* get_geometry_aggregator() { return new Aggregator(); }
 };
 
 

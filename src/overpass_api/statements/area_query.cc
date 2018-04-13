@@ -46,8 +46,8 @@ class Area_Constraint : public Query_Constraint
         (Resource_Manager& rman, std::set< std::pair< Uint32_Index, Uint32_Index > >& ranges);
     bool get_ranges
         (Resource_Manager& rman, std::set< std::pair< Uint31_Index, Uint31_Index > >& ranges);
-    void filter(Resource_Manager& rman, Set& into, uint64 timestamp);
-    void filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp);
+    void filter(Resource_Manager& rman, Set& into);
+    void filter(const Statement& query, Resource_Manager& rman, Set& into);
     virtual ~Area_Constraint() {}
 
   private:
@@ -56,19 +56,31 @@ class Area_Constraint : public Query_Constraint
 };
 
 
+void copy_discrete_to_area_ranges(
+    const std::set< Uint31_Index >& area_blocks_req,
+    std::set< std::pair< Uint32_Index, Uint32_Index > >& nodes_req)
+{
+  nodes_req.clear();
+  for (std::set< Uint31_Index >::const_iterator it = area_blocks_req.begin(); it != area_blocks_req.end(); ++it)
+    nodes_req.insert(std::make_pair(Uint32_Index(it->val()), Uint32_Index((it->val()) + 0x100)));
+}
+
+
 bool Area_Constraint::get_ranges
     (Resource_Manager& rman, std::set< std::pair< Uint32_Index, Uint32_Index > >& ranges)
 {
   if (area->areas_from_input())
   {
-    std::map< std::string, Set >::const_iterator mit = rman.sets().find(area->get_input());
-    if (mit == rman.sets().end())
+    const Set* input = rman.get_set(area->get_input());
+    if (!input)
       return true;
 
-    area->get_ranges(mit->second.areas, ranges, area_blocks_req, rman);
+    area->get_ranges(input->areas, area_blocks_req, rman);
   }
   else
-    area->get_ranges(ranges, area_blocks_req, rman);
+    area->get_ranges(area_blocks_req, rman);
+  
+  copy_discrete_to_area_ranges(area_blocks_req, ranges);
 
   return true;
 }
@@ -84,37 +96,36 @@ bool Area_Constraint::get_ranges
 }
 
 
-void Area_Constraint::filter(Resource_Manager& rman, Set& into, uint64 timestamp)
+void Area_Constraint::filter(Resource_Manager& rman, Set& into)
 {
   std::set< std::pair< Uint31_Index, Uint31_Index > > ranges;
   get_ranges(rman, ranges);
 
   // pre-process ways to reduce the load of the expensive filter
   filter_ways_by_ranges(into.ways, ranges);
-  if (timestamp != NOW)
+  if (!into.attic_ways.empty())
     filter_ways_by_ranges(into.attic_ways, ranges);
 
   // pre-filter relations
   filter_relations_by_ranges(into.relations, ranges);
-  if (timestamp != NOW)
+  if (!into.attic_relations.empty())
     filter_relations_by_ranges(into.attic_relations, ranges);
 
   //TODO: filter areas
 }
 
 
-void Area_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp)
+void Area_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into)
 {
   std::set< Uint31_Index > area_blocks_req;
-  std::set< std::pair< Uint32_Index, Uint32_Index > > range_req;
   if (area->areas_from_input())
   {
-    std::map< std::string, Set >::const_iterator mit = rman.sets().find(area->get_input());
-    if (mit != rman.sets().end())
-      area->get_ranges(mit->second.areas, range_req, area_blocks_req, rman);
+    const Set* input = rman.get_set(area->get_input());
+    if (input)
+      area->get_ranges(input->areas, area_blocks_req, rman);
   }
   else
-    area->get_ranges(range_req, area_blocks_req, rman);
+    area->get_ranges(area_blocks_req, rman);
 
   //Process nodes
   area->collect_nodes(into.nodes, area_blocks_req, true, rman);
@@ -148,22 +159,23 @@ void Area_Constraint::filter(const Statement& query, Resource_Manager& rman, Set
 			     order_by_id(way_members_, Order_By_Way_Id()),
 			     into.relations);
 
-  if (timestamp != NOW)
-  {
-    //Process nodes
+  //Process nodes
+  if (!into.attic_nodes.empty())
     area->collect_nodes(into.attic_nodes, area_blocks_req, true, rman);
 
-    //Process ways
-    area->collect_ways(Way_Geometry_Store(into.attic_ways, timestamp, query, rman),
+  //Process ways
+  if (!into.attic_ways.empty())
+    area->collect_ways(Way_Geometry_Store(into.attic_ways, query, rman),
 		       into.attic_ways, area_blocks_req, false, query, rman);
 
-    //Process relations
-
+  //Process relations
+  if (!into.attic_relations.empty())
+  {
     // Retrieve all nodes referred by the relations.
     std::set< std::pair< Uint32_Index, Uint32_Index > > node_ranges;
     get_ranges(rman, node_ranges);
     std::map< Uint32_Index, std::vector< Attic< Node_Skeleton > > > node_members
-        = relation_node_members(&query, rman, into.attic_relations, timestamp, &node_ranges);
+        = relation_node_members(&query, rman, into.attic_relations, &node_ranges);
 
     // filter for those nodes that are in one of the areas
     area->collect_nodes(node_members, area_blocks_req, false, rman);
@@ -172,10 +184,10 @@ void Area_Constraint::filter(const Statement& query, Resource_Manager& rman, Set
     std::set< std::pair< Uint31_Index, Uint31_Index > > way_ranges;
     get_ranges(rman, way_ranges);
     std::map< Uint31_Index, std::vector< Attic< Way_Skeleton > > > way_members_
-        = relation_way_members(&query, rman, into.attic_relations, timestamp, &way_ranges);
+        = relation_way_members(&query, rman, into.attic_relations, &way_ranges);
 
     // Filter for those ways that are in one of the areas
-    area->collect_ways(Way_Geometry_Store(way_members_, timestamp, query, rman),
+    area->collect_ways(Way_Geometry_Store(way_members_, query, rman),
 		       way_members_, area_blocks_req, false, query, rman);
 
     filter_relations_expensive(order_attic_by_id(node_members, Order_By_Node_Id()),
@@ -191,11 +203,40 @@ void Area_Constraint::filter(const Statement& query, Resource_Manager& rman, Set
 
 bool Area_Query_Statement::is_used_ = false;
 
-Generic_Statement_Maker< Area_Query_Statement > Area_Query_Statement::statement_maker("area-query");
+
+Area_Query_Statement::Statement_Maker Area_Query_Statement::statement_maker;
+Area_Query_Statement::Criterion_Maker Area_Query_Statement::criterion_maker;
+
+
+Statement* Area_Query_Statement::Criterion_Maker::create_criterion(const Token_Node_Ptr& input_tree,
+    const std::string& type, const std::string& into,
+    Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output)
+{
+  Token_Node_Ptr tree_it = input_tree;
+  uint line_nr = tree_it->line_col.first;
+  std::string from = "_";
+  std::string ref;
+
+  if (tree_it->token == ":" && tree_it->rhs)
+  {
+    ref = tree_it.rhs()->token;
+    tree_it = tree_it.lhs();
+  }
+
+  if (tree_it->token == "." && tree_it->rhs)
+    from = tree_it.rhs()->token;
+
+  std::map< std::string, std::string > attributes;
+  attributes["from"] = from;
+  attributes["into"] = into;
+  attributes["ref"] = ref;
+  return new Area_Query_Statement(line_nr, attributes, global_settings);
+}
+
 
 Area_Query_Statement::Area_Query_Statement
     (int line_number_, const std::map< std::string, std::string >& input_attributes, Parsed_Query& global_settings)
-    : Output_Statement(line_number_)
+    : Output_Statement(line_number_), area_blocks_req_filled(false)
 {
   is_used_ = true;
 
@@ -229,10 +270,25 @@ Area_Query_Statement::~Area_Query_Statement()
 }
 
 
-void Area_Query_Statement::get_ranges
-    (std::set< std::pair< Uint32_Index, Uint32_Index > >& nodes_req,
-     std::set< Uint31_Index >& area_block_req,
-     Resource_Manager& rman)
+unsigned int Area_Query_Statement::count_ranges(Resource_Manager& rman)
+{
+  if (!area_blocks_req_filled)
+    fill_ranges(rman);
+  
+  return area_blocks_req.size();
+}
+
+
+void Area_Query_Statement::get_ranges(std::set< Uint31_Index >& area_blocks_req, Resource_Manager& rman)
+{
+  if (!area_blocks_req_filled)
+    fill_ranges(rman);
+  
+  area_blocks_req = this->area_blocks_req;
+}
+
+
+void Area_Query_Statement::fill_ranges(Resource_Manager& rman)
 {
   Block_Backend< Uint31_Index, Area_Skeleton > area_locations_db
       (rman.get_area_transaction()->data_index(area_settings().AREAS));
@@ -244,21 +300,16 @@ void Area_Query_Statement::get_ranges
     {
       for (std::vector< uint32 >::const_iterator it2(it.object().used_indices.begin());
           it2 != it.object().used_indices.end(); ++it2)
-      {
-	area_block_req.insert(Uint31_Index(*it2));
-	std::pair< Uint32_Index, Uint32_Index > range
-	    (std::make_pair(Uint32_Index(*it2), Uint32_Index((*it2) + 0x100)));
-	nodes_req.insert(range);
-      }
+        area_blocks_req.insert(Uint31_Index(*it2));
     }
   }
+  area_blocks_req_filled = true;
 }
 
 
 void Area_Query_Statement::get_ranges
     (const std::map< Uint31_Index, std::vector< Area_Skeleton > >& input_areas,
-     std::set< std::pair< Uint32_Index, Uint32_Index > >& nodes_req,
-     std::set< Uint31_Index >& area_block_req,
+     std::set< Uint31_Index >& area_blocks_req,
      Resource_Manager& rman)
 {
   area_id.clear();
@@ -271,12 +322,7 @@ void Area_Query_Statement::get_ranges
 
       for (std::vector< uint32 >::const_iterator it3(it2->used_indices.begin());
           it3 != it2->used_indices.end(); ++it3)
-      {
-        area_block_req.insert(Uint31_Index(*it3));
-        std::pair< Uint32_Index, Uint32_Index > range
-	    (std::make_pair(Uint32_Index(*it3), Uint32_Index((*it3) + 0x100)));
-        nodes_req.insert(range);
-      }
+        area_blocks_req.insert(Uint31_Index(*it3));
     }
   }
 
@@ -287,18 +333,18 @@ void Area_Query_Statement::get_ranges
 bool Area_Constraint::delivers_data(Resource_Manager& rman)
 {
   if (!area->areas_from_input())
-    return false;
+    return (area->count_ranges(rman) < 12);
   else
   {
-    std::map< std::string, Set >::const_iterator mit = rman.sets().find(area->get_input());
-    if (mit == rman.sets().end())
+    const Set* input = rman.get_set(area->get_input());
+    if (!input)
       return true;
 
     // Count the indicies of the input areas
     int counter = 0;
 
-    for (std::map< Uint31_Index, std::vector< Area_Skeleton > >::const_iterator it = mit->second.areas.begin();
-         it != mit->second.areas.end(); ++it)
+    for (std::map< Uint31_Index, std::vector< Area_Skeleton > >::const_iterator it = input->areas.begin();
+         it != input->areas.end(); ++it)
     {
       for (std::vector< Area_Skeleton >::const_iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2)
         counter += it2->used_indices.size();
@@ -827,11 +873,11 @@ void Area_Query_Statement::execute(Resource_Manager& rman)
   constraint.get_ranges(rman, ranges);
   get_elements_by_id_from_db< Uint32_Index, Node_Skeleton >
       (into.nodes, into.attic_nodes,
-       std::vector< Node::Id_Type >(), false, rman.get_desired_timestamp(), ranges, *this, rman,
+       std::vector< Node::Id_Type >(), false, ranges, *this, rman,
        *osm_base_settings().NODES, *attic_settings().NODES);
-  constraint.filter(rman, into, rman.get_desired_timestamp());
+  constraint.filter(rman, into);
   filter_attic_elements(rman, rman.get_desired_timestamp(), into.nodes, into.attic_nodes);
-  constraint.filter(*this, rman, into, rman.get_desired_timestamp());
+  constraint.filter(*this, rman, into);
 
   transfer_output(rman, into);
   rman.health_check(*this);

@@ -32,8 +32,8 @@ class Filter_Constraint : public Query_Constraint
     Filter_Constraint(Filter_Statement& stmt_) : stmt(&stmt_) {}
     bool get_ranges(Resource_Manager& rman, std::set< std::pair< Uint32_Index, Uint32_Index > >& ranges) { return false; }
     bool get_ranges(Resource_Manager& rman, std::set< std::pair< Uint31_Index, Uint31_Index > >& ranges) { return false; }
-    void filter(Resource_Manager& rman, Set& into, uint64 timestamp) {}
-    void filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp);
+    void filter(Resource_Manager& rman, Set& into) {}
+    void filter(const Statement& query, Resource_Manager& rman, Set& into);
     virtual ~Filter_Constraint() {}
 
   private:
@@ -41,9 +41,9 @@ class Filter_Constraint : public Query_Constraint
 };
 
 
-template< typename Index, typename Maybe_Attic, typename Object >
+template< typename Index, typename Maybe_Attic >
 void eval_elems(std::map< Index, std::vector< Maybe_Attic > >& items,
-    Tag_Store< Index, Object >* tag_store, Eval_Task& task)
+    Set_With_Context& into_context, Eval_Task& task)
 {
   for (typename std::map< Index, std::vector< Maybe_Attic > >::iterator it_idx = items.begin();
       it_idx != items.end(); ++it_idx)
@@ -54,14 +54,8 @@ void eval_elems(std::map< Index, std::vector< Maybe_Attic > >& items,
     for (typename std::vector< Maybe_Attic >::const_iterator it_elem = it_idx->second.begin();
         it_elem != it_idx->second.end(); ++it_elem)
     {
-      const std::vector< std::pair< std::string, std::string > >* tags =
-          tag_store ? tag_store->get(it_idx->first, *it_elem) : 0;
-      std::vector< std::pair< std::string, std::string > > result_tags;
-
-      std::string valuation = task.eval(&*it_elem, tags, 0);
-
-      double val_d = 0;
-      if (valuation != "" && (!try_double(valuation, val_d) || val_d != 0))
+      if (string_represents_boolean_true(
+          task.eval(into_context.get_context(it_idx->first, *it_elem), 0)))
         local_into.push_back(*it_elem);
     }
 
@@ -70,31 +64,31 @@ void eval_elems(std::map< Index, std::vector< Maybe_Attic > >& items,
 }
 
 
-void Filter_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp)
+void Filter_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into)
 {
   if (!stmt || !stmt->get_criterion())
     return;
 
-  std::pair< std::vector< Set_Usage >, uint > set_usage = stmt->get_criterion()->used_sets();
+  Requested_Context requested_context = stmt->get_criterion()->request_context();
+  Prepare_Task_Context context(requested_context, query, rman);
 
-  Prepare_Task_Context context(set_usage, rman);
-
-  Owner< Eval_Task > task(stmt->get_criterion()->get_task(context));
+  Owner< Eval_Task > task(stmt->get_criterion()->get_string_task(context, 0));
 
   Set_With_Context into_context;
   into_context.name = "";
-  into_context.prefetch(Set_Usage(into_context.name, set_usage.second), into, *rman.get_transaction());
+  into_context.parent = &context;
+  into_context.prefetch(requested_context.object_usage, into, query, rman);
 
   if (task)
   {
-    eval_elems(into.nodes, into_context.tag_store_nodes, *task);
-    eval_elems(into.attic_nodes, into_context.tag_store_attic_nodes, *task);
-    eval_elems(into.ways, into_context.tag_store_ways, *task);
-    eval_elems(into.attic_ways, into_context.tag_store_attic_ways, *task);
-    eval_elems(into.relations, into_context.tag_store_relations, *task);
-    eval_elems(into.attic_relations, into_context.tag_store_attic_relations, *task);
-    eval_elems(into.areas, into_context.tag_store_areas, *task);
-    eval_elems(into.deriveds, into_context.tag_store_deriveds, *task);
+    eval_elems(into.nodes, into_context, *task);
+    eval_elems(into.attic_nodes, into_context, *task);
+    eval_elems(into.ways, into_context, *task);
+    eval_elems(into.attic_ways, into_context, *task);
+    eval_elems(into.relations, into_context, *task);
+    eval_elems(into.attic_relations, into_context, *task);
+    eval_elems(into.areas, into_context, *task);
+    eval_elems(into.deriveds, into_context, *task);
   }
 }
 
@@ -102,7 +96,32 @@ void Filter_Constraint::filter(const Statement& query, Resource_Manager& rman, S
 //-----------------------------------------------------------------------------
 
 
-Generic_Statement_Maker< Filter_Statement > Filter_Statement::statement_maker("filter");
+Filter_Statement::Statement_Maker Filter_Statement::statement_maker;
+Filter_Statement::Criterion_Maker Filter_Statement::criterion_maker;
+
+
+Statement* Filter_Statement::Criterion_Maker::create_criterion(const Token_Node_Ptr& tree_it,
+    const std::string& type, const std::string& into,
+    Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output)
+{
+  Statement* filter = 0;
+  uint line_nr = tree_it->line_col.first;
+
+  if (tree_it->token == ":" && tree_it->rhs)
+  {
+    Statement* criterion = stmt_factory.create_evaluator(
+        tree_it.rhs(), Statement::elem_eval_possible, Statement::Single_Return_Type_Checker(Statement::string));
+    if (criterion)
+    {
+      std::map< std::string, std::string > attributes;
+      filter = new Filter_Statement(line_nr, attributes, global_settings);
+      if (filter)
+        filter->add_statement(criterion, "");
+    }
+  }
+
+  return filter;
+}
 
 
 Filter_Statement::Filter_Statement
@@ -143,7 +162,7 @@ void Filter_Statement::execute(Resource_Manager& rman)
   Set into;
 
   Filter_Constraint constraint(*this);
-  constraint.filter(rman, into, rman.get_desired_timestamp());
+  constraint.filter(rman, into);
 
   transfer_output(rman, into);
   rman.health_check(*this);

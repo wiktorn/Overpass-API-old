@@ -36,7 +36,7 @@ struct Data_By_Id
   struct Entry
   {
     typedef std::vector< std::pair< std::string, std::string > > Tag_Container;
-    
+
     Uint31_Index idx;
     Element_Skeleton elem;
     OSM_Element_Metadata_Skeleton< typename Element_Skeleton::Id_Type > meta;
@@ -81,6 +81,27 @@ void remove_time_inconsistent_versions(Data_By_Id< Skeleton >& new_data)
     *to_it = *from_it;
     ++from_it;
   }
+  if (!new_data.data.empty())
+    new_data.data.erase(++to_it, new_data.data.end());
+}
+
+
+template< typename Skeleton >
+void deduplicate_data(Data_By_Id< Skeleton >& new_data)
+{
+  typename std::vector< typename Data_By_Id< Skeleton >::Entry >::iterator from_it = new_data.data.begin();
+  typename std::vector< typename Data_By_Id< Skeleton >::Entry >::iterator to_it = new_data.data.begin();
+  if (from_it != new_data.data.end())
+    ++from_it;
+  while (from_it != new_data.data.end())
+  {
+    if (!(to_it->elem.id == from_it->elem.id))
+      ++to_it;
+    *to_it = *from_it;
+    ++from_it;
+  }
+  if (!new_data.data.empty())
+    new_data.data.erase(++to_it, new_data.data.end());
 }
 
 
@@ -936,21 +957,21 @@ std::map< Tag_Index_Local, std::set< Attic< Id_Type > > > compute_new_attic_loca
         {
 	  // The more recent (thus relevant) timestamp is here tit2->timestamp.
 	  // In particular, the index of the object doesn't change at this time.
-	
+
 	  // We generate an entry for the older tag situation here. This means:
 	  // - If the tag was deleted at this point in time (last_index == 0u) then the tag is invalid anyway.
 	  // - If the value doesn't differ from the previous value then also no entry is necessary.
 	  // We then write the old tag value (maybe empty) if
 	  // - the older value is not the oldest known state
 	  // - or there is an even older version in this update process
-	
+
           if (last_idx.val() != 0u && last_value != *tit2 && (*tit2 != void_tag_value() + " "
 	      || it2 != it->second.end()
               || existing_attic_idxs.find(Uint31_Index(last_idx.val() & 0x7fffff00)) != existing_attic_idxs.end()))
             result[Tag_Index_Local(Uint31_Index(last_idx.val() & 0x7fffff00), tit->first.second,
 		    *tit2 != void_tag_value() + " " ? *tit2 : void_tag_value())]
                 .insert(Attic< Id_Type >(it->first, tit2->timestamp));
-		
+
           last_value = *tit2;
           ++tit2;
         }
@@ -958,20 +979,20 @@ std::map< Tag_Index_Local, std::set< Attic< Id_Type > > > compute_new_attic_loca
         {
 	  // The more recent (thus relevant) timestamp is here it2->timestamp.
 	  // In particular, the tag has before and after the value last_value.
-	
+
 	  // We only need to write something if
 	  // - the index really changes
 	  // - and the tag is really std::set
 	  // In this case we write an entry at the old index that the tag has expired
 	  // and an entry at the new index that the tag wasn't std::set here before.
-	
+
           if (!((last_idx.val() & 0x7fffff00) == (it2->val() & 0x7fffff00))
 	      && last_value != void_tag_value() && last_value != void_tag_value() + " ")
           {
             if (it2->val() != 0u)
               result[Tag_Index_Local(Uint31_Index(it2->val() & 0x7fffff00), tit->first.second, last_value)]
                 .insert(Attic< Id_Type >(it->first, it2->timestamp));
-		
+
             if (last_idx.val() != 0u)
               result[Tag_Index_Local(Uint31_Index(last_idx.val() & 0x7fffff00),
                                      tit->first.second, void_tag_value())]
@@ -983,17 +1004,17 @@ std::map< Tag_Index_Local, std::set< Attic< Id_Type > > > compute_new_attic_loca
         else
         {
 	  // Both timestamps are equal. We need to do different things if the effective index has changed or not.
-	
+
 	  if (!((last_idx.val() & 0x7fffff00) == (it2->val() & 0x7fffff00)))
 	  {
 	    // This is similar to the case that only the index changes.
-	
+
 	    // If the younger index is non-void then we store for it a delimiter to the past
             if (last_idx.val() != 0u && last_value != void_tag_value() && last_value != void_tag_value() + " ")
               result[Tag_Index_Local(Uint31_Index(last_idx.val() & 0x7fffff00),
                                      tit->first.second, void_tag_value())]
                   .insert(Attic< Id_Type >(it->first, it2->timestamp));
-	
+
 	    // If the older index is non-void then we write an entry for it
             if (it2->val() != 0u && *tit2 != void_tag_value() && *tit2 != void_tag_value() + " ")
             {
@@ -1004,12 +1025,12 @@ std::map< Tag_Index_Local, std::set< Attic< Id_Type > > > compute_new_attic_loca
 	  else
 	  {
 	    // This is similar to the case that only the tag value changes.
-            if (last_idx.val() != 0u && last_value != *tit2)
+            if ((last_idx.val() != 0u && last_value != *tit2) || it2->val() == 0xfe)
               result[Tag_Index_Local(Uint31_Index(last_idx.val() & 0x7fffff00), tit->first.second,
 		    *tit2 != void_tag_value() + " " ? *tit2 : void_tag_value())]
                   .insert(Attic< Id_Type >(it->first, tit2->timestamp));
 	  }
-	
+
           last_value = *tit2;
           ++tit2;
           last_idx = *it2;
@@ -1190,6 +1211,18 @@ std::map< Way_Skeleton::Id_Type, std::vector< std::pair< Uint31_Index, Attic< Wa
     collect_ways_by_id(
         const std::map< Uint31_Index, std::set< Attic< Way_Delta > > >& new_attic_way_skeletons,
         const std::map< Way_Skeleton::Id_Type, Uint31_Index >& new_way_idx_by_id);
+
+
+struct Cpu_Stopwatch
+{
+  void start_cpu_timer(uint index);
+  void stop_cpu_timer(uint index);
+  const std::vector< uint64 >& cpu_time() const { return cpu_runtime; }
+
+private:
+  std::vector< clock_t > cpu_start_time;
+  std::vector< uint64 > cpu_runtime;
+};
 
 
 #endif

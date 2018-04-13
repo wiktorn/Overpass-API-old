@@ -42,30 +42,32 @@ void Evaluator_Pair_Operator::add_statement(Statement* statement, std::string te
 void Evaluator_Pair_Operator::add_substatements(Statement* result, const std::string& operator_name,
     const Token_Node_Ptr& tree_it, Statement::QL_Context tree_context,
     Statement::Factory& stmt_factory, Error_Output* error_output)
-{    
+{
   if (result)
   {
-    Statement* lhs = stmt_factory.create_statement(tree_it.lhs(), tree_context);
+    Statement* lhs = stmt_factory.create_evaluator(
+        tree_it.lhs(), tree_context, Statement::Single_Return_Type_Checker(Statement::string));
     if (lhs)
       result->add_statement(lhs, "");
     else if (error_output)
       error_output->add_parse_error(std::string("Operator \"") + operator_name
           + "\" needs a left-hand-side argument", tree_it->line_col.first);
-    
-    Statement* rhs = stmt_factory.create_statement(tree_it.rhs(), tree_context);
+
+    Statement* rhs = stmt_factory.create_evaluator(
+        tree_it.rhs(), tree_context, Statement::Single_Return_Type_Checker(Statement::string));
     if (rhs)
       result->add_statement(rhs, "");
     else if (error_output)
       error_output->add_parse_error(std::string("Operator \"") + operator_name
           + "\" needs a right-hand-side argument", tree_it->line_col.first);
-  }  
+  }
 }
 
 
-Eval_Task* Evaluator_Pair_Operator::get_task(const Prepare_Task_Context& context)
+Eval_Task* Evaluator_Pair_Operator::get_string_task(Prepare_Task_Context& context, const std::string* key)
 {
-  Eval_Task* lhs_task = lhs ? lhs->get_task(context) : 0;
-  Eval_Task* rhs_task = rhs ? rhs->get_task(context) : 0;
+  Eval_Task* lhs_task = lhs ? lhs->get_string_task(context, key) : 0;
+  Eval_Task* rhs_task = rhs ? rhs->get_string_task(context, key) : 0;
   return new Binary_Eval_Task(lhs_task, rhs_task, this);
 }
 
@@ -76,87 +78,68 @@ std::string Binary_Eval_Task::eval(const std::string* key) const
 }
 
 
-std::string Binary_Eval_Task::eval(const Node_Skeleton* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::string* key) const
+std::string Binary_Eval_Task::eval(const Element_With_Context< Node_Skeleton >& data, const std::string* key) const
 {
-  return evaluator->process(lhs ? lhs->eval(elem, tags, key) : "", rhs ? rhs->eval(elem, tags, key) : "");
+  return evaluator->process(lhs ? lhs->eval(data, key) : "", rhs ? rhs->eval(data, key) : "");
 }
 
 
-std::string Binary_Eval_Task::eval(const Attic< Node_Skeleton >* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::string* key) const
+std::string Binary_Eval_Task::eval(const Element_With_Context< Attic< Node_Skeleton > >& data, const std::string* key) const
 {
-  return evaluator->process(lhs ? lhs->eval(elem, tags, key) : "", rhs ? rhs->eval(elem, tags, key) : "");
+  return evaluator->process(lhs ? lhs->eval(data, key) : "", rhs ? rhs->eval(data, key) : "");
 }
 
 
-std::string Binary_Eval_Task::eval(const Way_Skeleton* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::string* key) const
+std::string Binary_Eval_Task::eval(const Element_With_Context< Way_Skeleton >& data, const std::string* key) const
 {
-  return evaluator->process(lhs ? lhs->eval(elem, tags, key) : "", rhs ? rhs->eval(elem, tags, key) : "");
+  return evaluator->process(lhs ? lhs->eval(data, key) : "", rhs ? rhs->eval(data, key) : "");
 }
 
 
-std::string Binary_Eval_Task::eval(const Attic< Way_Skeleton >* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::string* key) const
+std::string Binary_Eval_Task::eval(const Element_With_Context< Attic< Way_Skeleton > >& data, const std::string* key) const
 {
-  return evaluator->process(lhs ? lhs->eval(elem, tags, key) : "", rhs ? rhs->eval(elem, tags, key) : "");
+  return evaluator->process(lhs ? lhs->eval(data, key) : "", rhs ? rhs->eval(data, key) : "");
 }
 
 
-std::string Binary_Eval_Task::eval(const Relation_Skeleton* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::string* key) const
+std::string Binary_Eval_Task::eval(const Element_With_Context< Relation_Skeleton >& data, const std::string* key) const
 {
-  return evaluator->process(lhs ? lhs->eval(elem, tags, key) : "", rhs ? rhs->eval(elem, tags, key) : "");
+  return evaluator->process(lhs ? lhs->eval(data, key) : "", rhs ? rhs->eval(data, key) : "");
 }
 
 
-std::string Binary_Eval_Task::eval(const Attic< Relation_Skeleton >* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::string* key) const
+std::string Binary_Eval_Task::eval(const Element_With_Context< Attic< Relation_Skeleton > >& data, const std::string* key) const
 {
-  return evaluator->process(lhs ? lhs->eval(elem, tags, key) : "", rhs ? rhs->eval(elem, tags, key) : "");
+  return evaluator->process(lhs ? lhs->eval(data, key) : "", rhs ? rhs->eval(data, key) : "");
 }
 
 
-std::string Binary_Eval_Task::eval(const Area_Skeleton* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::string* key) const
+std::string Binary_Eval_Task::eval(const Element_With_Context< Area_Skeleton >& data, const std::string* key) const
 {
-  return evaluator->process(lhs ? lhs->eval(elem, tags, key) : "", rhs ? rhs->eval(elem, tags, key) : "");
+  return evaluator->process(lhs ? lhs->eval(data, key) : "", rhs ? rhs->eval(data, key) : "");
 }
 
 
-std::string Binary_Eval_Task::eval(const Derived_Skeleton* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::string* key) const
+std::string Binary_Eval_Task::eval(const Element_With_Context< Derived_Skeleton >& data, const std::string* key) const
 {
-  return evaluator->process(lhs ? lhs->eval(elem, tags, key) : "", rhs ? rhs->eval(elem, tags, key) : "");
+  return evaluator->process(lhs ? lhs->eval(data, key) : "", rhs ? rhs->eval(data, key) : "");
 }
 
-    
-std::pair< std::vector< Set_Usage >, uint > Evaluator_Pair_Operator::used_sets() const
+
+Requested_Context Evaluator_Pair_Operator::request_context() const
 {
   if (lhs && rhs)
-    return union_usage(lhs->used_sets(), rhs->used_sets());
+  {
+    Requested_Context result = lhs->request_context();
+    result.add(rhs->request_context());
+    return result;
+  }
   else if (lhs)
-    return lhs->used_sets();
+    return lhs->request_context();
   else if (rhs)
-    return rhs->used_sets();
-  return std::make_pair(std::vector< Set_Usage >(), 0u);
-}
+    return rhs->request_context();
 
-
-std::vector< std::string > Evaluator_Pair_Operator::used_tags() const
-{
-  std::vector< std::string > lhs_result;
-  if (lhs)
-    lhs->used_tags().swap(lhs_result);
-  std::vector< std::string > rhs_result;
-  if (rhs)
-    rhs->used_tags().swap(rhs_result);
-  
-  std::vector< std::string > result(lhs_result.size() + rhs_result.size());
-  result.erase(std::set_union(lhs_result.begin(), lhs_result.end(), rhs_result.begin(), rhs_result.end(),
-      result.begin()), result.end());
-  return result;
+  return Requested_Context();
 }
 
 
@@ -164,16 +147,12 @@ std::vector< std::string > Evaluator_Pair_Operator::used_tags() const
 
 
 Operator_Stmt_Maker< Evaluator_And > Evaluator_And::statement_maker;
+Operator_Eval_Maker< Evaluator_And > Evaluator_And::evaluator_maker;
 
 
 std::string Evaluator_And::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
-  double lhs_d = 0;
-  double rhs_d = 0;  
-  if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
-    return lhs_d && rhs_d ? "1" : "0";
-  
-  return (lhs_s != "") && (rhs_s != "") ? "1" : "0";
+  return string_represents_boolean_true(lhs_s) && string_represents_boolean_true(rhs_s) ? "1" : "0";
 }
 
 
@@ -181,16 +160,12 @@ std::string Evaluator_And::process(const std::string& lhs_s, const std::string& 
 
 
 Operator_Stmt_Maker< Evaluator_Or > Evaluator_Or::statement_maker;
+Operator_Eval_Maker< Evaluator_Or > Evaluator_Or::evaluator_maker;
 
 
 std::string Evaluator_Or::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
-  double lhs_d = 0;
-  double rhs_d = 0;  
-  if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
-    return lhs_d || rhs_d ? "1" : "0";
-  
-  return (lhs_s != "") || (rhs_s != "") ? "1" : "0";
+  return string_represents_boolean_true(lhs_s) || string_represents_boolean_true(rhs_s) ? "1" : "0";
 }
 
 
@@ -198,20 +173,21 @@ std::string Evaluator_Or::process(const std::string& lhs_s, const std::string& r
 
 
 Operator_Stmt_Maker< Evaluator_Equal > Evaluator_Equal::statement_maker;
+Operator_Eval_Maker< Evaluator_Equal > Evaluator_Equal::evaluator_maker;
 
 
 std::string Evaluator_Equal::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
   int64 lhs_l = 0;
-  int64 rhs_l = 0;  
+  int64 rhs_l = 0;
   if (try_int64(lhs_s, lhs_l) && try_int64(rhs_s, rhs_l))
     return lhs_l == rhs_l ? "1" : "0";
-  
+
   double lhs_d = 0;
-  double rhs_d = 0;  
+  double rhs_d = 0;
   if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
     return lhs_d == rhs_d ? "1" : "0";
-  
+
   return lhs_s == rhs_s ? "1" : "0";
 }
 
@@ -220,20 +196,21 @@ std::string Evaluator_Equal::process(const std::string& lhs_s, const std::string
 
 
 Operator_Stmt_Maker< Evaluator_Not_Equal > Evaluator_Not_Equal::statement_maker;
+Operator_Eval_Maker< Evaluator_Not_Equal > Evaluator_Not_Equal::evaluator_maker;
 
 
 std::string Evaluator_Not_Equal::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
   int64 lhs_l = 0;
-  int64 rhs_l = 0;  
+  int64 rhs_l = 0;
   if (try_int64(lhs_s, lhs_l) && try_int64(rhs_s, rhs_l))
     return lhs_l == rhs_l ? "0" : "1";
-  
+
   double lhs_d = 0;
-  double rhs_d = 0;  
+  double rhs_d = 0;
   if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
     return lhs_d == rhs_d ? "0" : "1";
-  
+
   return lhs_s == rhs_s ? "0" : "1";
 }
 
@@ -242,20 +219,21 @@ std::string Evaluator_Not_Equal::process(const std::string& lhs_s, const std::st
 
 
 Operator_Stmt_Maker< Evaluator_Less > Evaluator_Less::statement_maker;
+Operator_Eval_Maker< Evaluator_Less > Evaluator_Less::evaluator_maker;
 
 
 std::string Evaluator_Less::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
   int64 lhs_l = 0;
-  int64 rhs_l = 0;  
+  int64 rhs_l = 0;
   if (try_int64(lhs_s, lhs_l) && try_int64(rhs_s, rhs_l))
     return lhs_l < rhs_l ? "1" : "0";
-  
+
   double lhs_d = 0;
-  double rhs_d = 0;  
+  double rhs_d = 0;
   if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
     return lhs_d < rhs_d ? "1" : "0";
-  
+
   return lhs_s < rhs_s ? "1" : "0";
 }
 
@@ -264,20 +242,21 @@ std::string Evaluator_Less::process(const std::string& lhs_s, const std::string&
 
 
 Operator_Stmt_Maker< Evaluator_Less_Equal > Evaluator_Less_Equal::statement_maker;
+Operator_Eval_Maker< Evaluator_Less_Equal > Evaluator_Less_Equal::evaluator_maker;
 
 
 std::string Evaluator_Less_Equal::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
   int64 lhs_l = 0;
-  int64 rhs_l = 0;  
+  int64 rhs_l = 0;
   if (try_int64(lhs_s, lhs_l) && try_int64(rhs_s, rhs_l))
     return lhs_l <= rhs_l ? "1" : "0";
-  
+
   double lhs_d = 0;
-  double rhs_d = 0;  
+  double rhs_d = 0;
   if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
     return lhs_d <= rhs_d ? "1" : "0";
-  
+
   return lhs_s <= rhs_s ? "1" : "0";
 }
 
@@ -286,20 +265,21 @@ std::string Evaluator_Less_Equal::process(const std::string& lhs_s, const std::s
 
 
 Operator_Stmt_Maker< Evaluator_Greater > Evaluator_Greater::statement_maker;
+Operator_Eval_Maker< Evaluator_Greater > Evaluator_Greater::evaluator_maker;
 
 
 std::string Evaluator_Greater::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
   int64 lhs_l = 0;
-  int64 rhs_l = 0;  
+  int64 rhs_l = 0;
   if (try_int64(lhs_s, lhs_l) && try_int64(rhs_s, rhs_l))
     return lhs_l > rhs_l ? "1" : "0";
-  
+
   double lhs_d = 0;
-  double rhs_d = 0;  
+  double rhs_d = 0;
   if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
     return lhs_d > rhs_d ? "1" : "0";
-  
+
   return lhs_s > rhs_s ? "1" : "0";
 }
 
@@ -308,20 +288,21 @@ std::string Evaluator_Greater::process(const std::string& lhs_s, const std::stri
 
 
 Operator_Stmt_Maker< Evaluator_Greater_Equal > Evaluator_Greater_Equal::statement_maker;
+Operator_Eval_Maker< Evaluator_Greater_Equal > Evaluator_Greater_Equal::evaluator_maker;
 
 
 std::string Evaluator_Greater_Equal::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
   int64 lhs_l = 0;
-  int64 rhs_l = 0;  
+  int64 rhs_l = 0;
   if (try_int64(lhs_s, lhs_l) && try_int64(rhs_s, rhs_l))
     return lhs_l >= rhs_l ? "1" : "0";
-  
+
   double lhs_d = 0;
-  double rhs_d = 0;  
+  double rhs_d = 0;
   if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
     return lhs_d >= rhs_d ? "1" : "0";
-  
+
   return lhs_s >= rhs_s ? "1" : "0";
 }
 
@@ -330,20 +311,21 @@ std::string Evaluator_Greater_Equal::process(const std::string& lhs_s, const std
 
 
 Operator_Stmt_Maker< Evaluator_Plus > Evaluator_Plus::statement_maker;
+Operator_Eval_Maker< Evaluator_Plus > Evaluator_Plus::evaluator_maker;
 
 
 std::string Evaluator_Plus::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
   int64 lhs_l = 0;
-  int64 rhs_l = 0;  
+  int64 rhs_l = 0;
   if (try_int64(lhs_s, lhs_l) && try_int64(rhs_s, rhs_l))
     return to_string(lhs_l + rhs_l);
-  
+
   double lhs_d = 0;
-  double rhs_d = 0;  
+  double rhs_d = 0;
   if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
     return to_string(lhs_d + rhs_d);
-  
+
   return lhs_s + rhs_s;
 }
 
@@ -352,20 +334,21 @@ std::string Evaluator_Plus::process(const std::string& lhs_s, const std::string&
 
 
 Operator_Stmt_Maker< Evaluator_Minus > Evaluator_Minus::statement_maker;
+Operator_Eval_Maker< Evaluator_Minus > Evaluator_Minus::evaluator_maker;
 
 
 std::string Evaluator_Minus::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
   int64 lhs_l = 0;
-  int64 rhs_l = 0;  
+  int64 rhs_l = 0;
   if (try_int64(lhs_s, lhs_l) && try_int64(rhs_s, rhs_l))
     return to_string(lhs_l - rhs_l);
-  
+
   double lhs_d = 0;
-  double rhs_d = 0;  
+  double rhs_d = 0;
   if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
     return to_string(lhs_d - rhs_d);
-  
+
   return "NaN";
 }
 
@@ -374,20 +357,21 @@ std::string Evaluator_Minus::process(const std::string& lhs_s, const std::string
 
 
 Operator_Stmt_Maker< Evaluator_Times > Evaluator_Times::statement_maker;
+Operator_Eval_Maker< Evaluator_Times > Evaluator_Times::evaluator_maker;
 
 
 std::string Evaluator_Times::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
   int64 lhs_l = 0;
-  int64 rhs_l = 0;  
+  int64 rhs_l = 0;
   if (try_int64(lhs_s, lhs_l) && try_int64(rhs_s, rhs_l))
     return to_string(lhs_l * rhs_l);
-  
+
   double lhs_d = 0;
-  double rhs_d = 0;  
+  double rhs_d = 0;
   if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
     return to_string(lhs_d * rhs_d);
-  
+
   return "NaN";
 }
 
@@ -396,16 +380,17 @@ std::string Evaluator_Times::process(const std::string& lhs_s, const std::string
 
 
 Operator_Stmt_Maker< Evaluator_Divided > Evaluator_Divided::statement_maker;
+Operator_Eval_Maker< Evaluator_Divided > Evaluator_Divided::evaluator_maker;
 
 
 std::string Evaluator_Divided::process(const std::string& lhs_s, const std::string& rhs_s) const
 {
-  // On purpose no int64 detection  
-  
+  // On purpose no int64 detection
+
   double lhs_d = 0;
-  double rhs_d = 0;  
+  double rhs_d = 0;
   if (try_double(lhs_s, lhs_d) && try_double(rhs_s, rhs_d))
     return to_string(lhs_d / rhs_d);
-  
+
   return "NaN";
 }

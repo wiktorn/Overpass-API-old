@@ -43,8 +43,8 @@ class Bbox_Constraint : public Query_Constraint
         (Resource_Manager& rman, std::set< std::pair< Uint32_Index, Uint32_Index > >& ranges);
     bool get_ranges
         (Resource_Manager& rman, std::set< std::pair< Uint31_Index, Uint31_Index > >& ranges);
-    void filter(Resource_Manager& rman, Set& into, uint64 timestamp);
-    void filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp);
+    void filter(Resource_Manager& rman, Set& into);
+    void filter(const Statement& query, Resource_Manager& rman, Set& into);
     virtual ~Bbox_Constraint() {}
 
   private:
@@ -80,20 +80,66 @@ bool Bbox_Constraint::get_ranges
 }
 
 
-void Bbox_Constraint::filter(Resource_Manager& rman, Set& into, uint64 timestamp)
+void Bbox_Constraint::filter(Resource_Manager& rman, Set& into)
 {
-  filter_.filter(into, timestamp);
+  filter_.filter(into);
 }
 
 
-void Bbox_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp)
+void Bbox_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into)
 {
-  filter_.filter(query, rman, into, timestamp);
+  filter_.filter(query, rman, into, rman.get_desired_timestamp() != NOW);
 }
 
 //-----------------------------------------------------------------------------
 
-Generic_Statement_Maker< Bbox_Query_Statement > Bbox_Query_Statement::statement_maker("bbox-query");
+
+Bbox_Query_Statement::Statement_Maker Bbox_Query_Statement::statement_maker;
+Bbox_Query_Statement::Criterion_Maker Bbox_Query_Statement::criterion_maker;
+
+
+Statement* Bbox_Query_Statement::Criterion_Maker::create_criterion(const Token_Node_Ptr& input_tree,
+    const std::string& result_type, const std::string& into,
+    Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output)
+{
+  Token_Node_Ptr tree_it = input_tree;
+  uint line_nr = tree_it->line_col.first;
+  std::map< std::string, std::string > attributes;
+
+  if (tree_it->token != "," || !tree_it->rhs || !tree_it->lhs)
+  {
+    if (error_output)
+      error_output->add_parse_error("bbox requires four arguments", line_nr);
+    return 0;
+  }
+
+  attributes["e"] = tree_it.rhs()->token;
+  tree_it = tree_it.lhs();
+
+  if (tree_it->token != "," || !tree_it->rhs || !tree_it->lhs)
+  {
+    if (error_output)
+      error_output->add_parse_error("bbox requires four arguments", line_nr);
+    return 0;
+  }
+
+  attributes["n"] = tree_it.rhs()->token;
+  tree_it = tree_it.lhs();
+
+  if (tree_it->token != "," || !tree_it->rhs || !tree_it->lhs)
+  {
+    if (error_output)
+      error_output->add_parse_error("bbox requires four arguments", line_nr);
+    return 0;
+  }
+
+  attributes["w"] = tree_it.rhs()->token;
+  attributes["s"] = tree_it.lhs()->token;
+
+  attributes["into"] = into;
+  return new Bbox_Query_Statement(line_nr, attributes, global_settings);
+}
+
 
 Bbox_Query_Statement::Bbox_Query_Statement
     (int line_number_, const std::map< std::string, std::string >& input_attributes, Parsed_Query& global_settings)
@@ -189,9 +235,9 @@ void Bbox_Query_Statement::execute(Resource_Manager& rman)
   constraint.get_ranges(rman, ranges);
   get_elements_by_id_from_db< Uint32_Index, Node_Skeleton >
       (into.nodes, into.attic_nodes,
-       std::vector< Node::Id_Type >(), false, rman.get_desired_timestamp(), ranges, *this, rman,
+       std::vector< Node::Id_Type >(), false, ranges, *this, rman,
        *osm_base_settings().NODES, *attic_settings().NODES);
-  constraint.filter(rman, into, rman.get_desired_timestamp());
+  constraint.filter(rman, into);
   filter_attic_elements(rman, rman.get_desired_timestamp(), into.nodes, into.attic_nodes);
 
   transfer_output(rman, into);

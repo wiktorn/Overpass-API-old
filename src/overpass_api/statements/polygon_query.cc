@@ -44,8 +44,8 @@ class Polygon_Constraint : public Query_Constraint
         (Resource_Manager& rman, std::set< std::pair< Uint32_Index, Uint32_Index > >& ranges);
     bool get_ranges
         (Resource_Manager& rman, std::set< std::pair< Uint31_Index, Uint31_Index > >& ranges);
-    void filter(Resource_Manager& rman, Set& into, uint64 timestamp);
-    void filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp);
+    void filter(Resource_Manager& rman, Set& into);
+    void filter(const Statement& query, Resource_Manager& rman, Set& into);
     virtual ~Polygon_Constraint() {}
 
   private:
@@ -76,10 +76,10 @@ bool Polygon_Constraint::get_ranges
 }
 
 
-void Polygon_Constraint::filter(Resource_Manager& rman, Set& into, uint64 timestamp)
+void Polygon_Constraint::filter(Resource_Manager& rman, Set& into)
 {
   polygon->collect_nodes(into.nodes, true);
-  if (timestamp != NOW)
+  if (!into.attic_nodes.empty())
     polygon->collect_nodes(into.attic_nodes, true);
 
   std::set< std::pair< Uint31_Index, Uint31_Index > > ranges;
@@ -87,19 +87,19 @@ void Polygon_Constraint::filter(Resource_Manager& rman, Set& into, uint64 timest
 
   // pre-process ways to reduce the load of the expensive filter
   filter_ways_by_ranges(into.ways, ranges);
-  if (timestamp != NOW)
+  if (!into.attic_ways.empty())
     filter_ways_by_ranges(into.attic_ways, ranges);
 
   // pre-filter relations
   filter_relations_by_ranges(into.relations, ranges);
-  if (timestamp != NOW)
+  if (!into.attic_relations.empty())
     filter_relations_by_ranges(into.attic_relations, ranges);
 
   //TODO: filter areas
 }
 
 
-void Polygon_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp)
+void Polygon_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into)
 {
   //Process ways
   polygon->collect_ways(into.ways, Way_Geometry_Store(into.ways, query, rman), true, query, rman);
@@ -127,26 +127,26 @@ void Polygon_Constraint::filter(const Statement& query, Resource_Manager& rman, 
 			     order_by_id(way_members_, Order_By_Way_Id()),
 			     into.relations);
 
-  if (timestamp != NOW)
-  {
-    //Process ways
-    polygon->collect_ways(into.attic_ways, Way_Geometry_Store(into.attic_ways, timestamp, query, rman),
+  //Process ways
+  if (!into.attic_ways.empty())
+    polygon->collect_ways(into.attic_ways, Way_Geometry_Store(into.attic_ways, query, rman),
 			  true, query, rman);
 
-    //Process relations
-
+  //Process relations
+  if (!into.attic_relations.empty())
+  {
     // Retrieve all nodes referred by the relations.
     std::map< Uint32_Index, std::vector< Attic< Node_Skeleton > > > node_members
-        = relation_node_members(&query, rman, into.attic_relations, timestamp, &node_ranges);
+        = relation_node_members(&query, rman, into.attic_relations, &node_ranges);
 
     // filter for those nodes that are in one of the areas
     polygon->collect_nodes(node_members, false);
 
     // Retrieve all ways referred by the relations.
     std::map< Uint31_Index, std::vector< Attic< Way_Skeleton > > > way_members_
-        = relation_way_members(&query, rman, into.attic_relations, timestamp, &way_ranges);
+        = relation_way_members(&query, rman, into.attic_relations, &way_ranges);
 
-    polygon->collect_ways(way_members_, Way_Geometry_Store(way_members_, timestamp, query, rman),
+    polygon->collect_ways(way_members_, Way_Geometry_Store(way_members_, query, rman),
 			  false, query, rman);
 
     filter_relations_expensive(order_attic_by_id(node_members, Order_By_Node_Id()),
@@ -222,7 +222,27 @@ void add_segment_blocks(std::vector< Aligned_Segment >& segments)
   }
 }
 
-Generic_Statement_Maker< Polygon_Query_Statement > Polygon_Query_Statement::statement_maker("polygon-query");
+
+Polygon_Query_Statement::Statement_Maker Polygon_Query_Statement::statement_maker;
+Polygon_Query_Statement::Criterion_Maker Polygon_Query_Statement::criterion_maker;
+
+
+Statement* Polygon_Query_Statement::Criterion_Maker::create_criterion(const Token_Node_Ptr& tree_it,
+    const std::string& type, const std::string& into,
+    Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output)
+{
+  uint line_nr = tree_it->line_col.first;
+
+  if (tree_it->token == ":" && tree_it->rhs)
+  {
+    std::map< std::string, std::string > attributes;
+    attributes["bounds"] = decode_json(tree_it.rhs()->token, error_output);
+    attributes["into"] = into;
+    return new Polygon_Query_Statement(line_nr, attributes, global_settings);
+  }
+
+  return 0;
+}
 
 
 bool covers_large_area(const std::vector< std::pair< double, double > >& edges)
@@ -295,9 +315,10 @@ Polygon_Query_Statement::Polygon_Query_Statement
 
   for (unsigned int i = 1; i < edges.size(); ++i)
     Area::calc_aligned_segments(segments, edges[i-1].first, edges[i-1].second, edges[i].first, edges[i].second);
-  Area::calc_aligned_segments(
-      segments, edges[edges.size()-1].first, edges[edges.size()-1].second, edges[0].first, edges[0].second);
-  sort(segments.begin(), segments.end());
+  if (!edges.empty())
+    Area::calc_aligned_segments(
+        segments, edges.back().first, edges.back().second, edges[0].first, edges[0].second);
+  std::sort(segments.begin(), segments.end());
 
   add_segment_blocks(segments);
 }
@@ -359,7 +380,7 @@ void Polygon_Query_Statement::collect_nodes(std::map< Uint32_Index, std::vector<
             + 91.0)*10000000+0.5);
         int32 ilon(::lon(nodes_it->first.val(), iit->ll_lower)*10000000
             + (::lon(nodes_it->first.val(), iit->ll_lower) > 0 ? 0.5 : -0.5));
-	
+
         int inside = 0;
         for (std::vector< Area_Block >::const_iterator it = areas.begin();
 	     it != areas.end(); ++it)
@@ -531,9 +552,9 @@ void Polygon_Query_Statement::execute(Resource_Manager& rman)
   constraint.get_ranges(rman, ranges);
   get_elements_by_id_from_db< Uint32_Index, Node_Skeleton >
       (into.nodes, into.attic_nodes,
-       std::vector< Node::Id_Type >(), false, rman.get_desired_timestamp(), ranges, *this, rman,
+       std::vector< Node::Id_Type >(), false, ranges, *this, rman,
        *osm_base_settings().NODES, *attic_settings().NODES);
-  constraint.filter(rman, into, rman.get_desired_timestamp());
+  constraint.filter(rman, into);
   filter_attic_elements(rman, rman.get_desired_timestamp(), into.nodes, into.attic_nodes);
 
   transfer_output(rman, into);

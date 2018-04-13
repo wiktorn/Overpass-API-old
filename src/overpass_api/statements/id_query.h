@@ -35,10 +35,24 @@ class Id_Query_Statement : public Output_Statement
     virtual void execute(Resource_Manager& rman);
     virtual ~Id_Query_Statement();
 
-    static Generic_Statement_Maker< Id_Query_Statement > statement_maker;
+    struct Statement_Maker : public Generic_Statement_Maker< Id_Query_Statement >
+    {
+      Statement_Maker() : Generic_Statement_Maker< Id_Query_Statement >("id-query") {}
+    };
+    static Statement_Maker statement_maker;
+
+    struct Criterion_Maker : public Statement::Criterion_Maker
+    {
+      virtual bool can_standalone(const std::string& type) { return true; }
+      virtual Statement* create_criterion(const Token_Node_Ptr& tree_it,
+          const std::string& type, const std::string& into,
+          Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output);
+      Criterion_Maker() { Statement::maker_by_ql_criterion()["id"] = this; }
+    };
+    static Criterion_Maker criterion_maker;
 
     virtual Query_Constraint* get_query_constraint();
-    
+
     const std::vector< uint64 >& get_refs() { return refs; }
     int get_type() const { return type; }
 
@@ -59,32 +73,32 @@ class Id_Query_Statement : public Output_Statement
     virtual std::string dump_xml(const std::string& indent) const
     {
       std::vector< uint64 >::const_iterator it = refs.begin();
-      
+
       std::string result = indent + "<id-query" + std::string(" type=\"") + to_string(type) + "\"";
       if (!refs.empty())
         result += " ref=\"" + ::to_string(refs[0]) + "\"";
       for (uint i = 1; i < refs.size(); ++i)
         result += " ref_" + ::to_string(i) + "=\"" + ::to_string(refs[i]) + "\"";
-      
+
       return result + dump_xml_result_name() + "/>\n";
     }
 
     virtual std::string dump_compact_ql(const std::string&) const
     {
-      return to_string(type) + dump_ql_in_query("") + dump_ql_result_name();
+      return to_string(type) + dump_ql_in_query("") + dump_ql_result_name() + ";";
     }
     virtual std::string dump_pretty_ql(const std::string& indent) const { return indent + dump_compact_ql(indent); }
     virtual std::string dump_ql_in_query(const std::string& indent) const
     {
       std::vector< uint64 >::const_iterator it = refs.begin();
-        
+
       std::string result = "(";
       if (it != refs.end())
         result += ::to_string(*it++);
       while (it != refs.end())
         result += "," + ::to_string(*it++);
       result += ")";
-        
+
       return result;
     }
 

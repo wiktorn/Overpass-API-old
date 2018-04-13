@@ -41,7 +41,7 @@ Generic_Statement_Maker< Make_Area_Statement > Make_Area_Statement::statement_ma
 
 Make_Area_Statement::Make_Area_Statement
     (int line_number_, const std::map< std::string, std::string >& input_attributes, Parsed_Query& global_settings)
-    : Output_Statement(line_number_)
+    : Output_Statement(line_number_), return_area(true)
 {
   is_used_ = true;
 
@@ -50,12 +50,22 @@ Make_Area_Statement::Make_Area_Statement
   attributes["from"] = "_";
   attributes["into"] = "_";
   attributes["pivot"] = "";
+  attributes["return-area"] = "yes";
 
   eval_attributes_array(get_name(), attributes, input_attributes);
 
   input = attributes["from"];
   set_output(attributes["into"]);
   pivot = attributes["pivot"];
+  
+  if (attributes["return-area"] != "yes")
+  {
+    if (attributes["return-area"] == "no")
+      return_area = false;
+    else
+      add_static_error("For the attribute \"return-area\" of the element \"make-area\""
+        " the only allowed values are \"yes\" or \"no\", default is \"yes\".");
+  }
 }
 
 
@@ -288,13 +298,13 @@ void Make_Area_Statement::execute(Resource_Manager& rman)
   Set into;
 
   // detect pivot element
-  std::map< std::string, Set >::const_iterator mit(rman.sets().find(pivot));
-  if (mit == rman.sets().end())
+  const Set* pivot_set = rman.get_set(pivot);
+  if (!pivot_set)
   {
     transfer_output(rman, into);
     return;
   }
-  std::pair< uint32, Uint64 > pivot_pair(detect_pivot(mit->second));
+  std::pair< uint32, Uint64 > pivot_pair(detect_pivot(*pivot_set));
   int pivot_type(pivot_pair.first);
   uint32 pivot_id(pivot_pair.second.val());
 
@@ -308,11 +318,11 @@ void Make_Area_Statement::execute(Resource_Manager& rman)
   std::set< Uint31_Index > coarse_indices;
   std::set< std::pair< Tag_Index_Local, Tag_Index_Local > > range_set;
   if (pivot_type == NODE)
-    coarse_indices.insert(mit->second.nodes.begin()->first.val() & 0x7fffff00);
+    coarse_indices.insert(pivot_set->nodes.begin()->first.val() & 0x7fffff00);
   else if (pivot_type == WAY)
-    coarse_indices.insert(mit->second.ways.begin()->first.val() & 0x7fffff00);
+    coarse_indices.insert(pivot_set->ways.begin()->first.val() & 0x7fffff00);
   else if (pivot_type == RELATION)
-    coarse_indices.insert(mit->second.relations.begin()->first.val() & 0x7fffff00);
+    coarse_indices.insert(pivot_set->relations.begin()->first.val() & 0x7fffff00);
 
   formulate_range_query(range_set, coarse_indices);
 
@@ -342,15 +352,15 @@ void Make_Area_Statement::execute(Resource_Manager& rman)
   else if (pivot_type == RELATION)
     pivot_id += 3600000000u;
 
-  mit = rman.sets().find(input);
-  if (mit == rman.sets().end())
+  const Set* input_set = rman.get_set(input);
+  if (!input_set)
   {
     transfer_output(rman, into);
     return;
   }
 
   // check node parity
-  Node::Id_Type odd_id(check_node_parity(mit->second));
+  Node::Id_Type odd_id(check_node_parity(*input_set));
   if (!(odd_id == Node::Id_Type(0ull)))
   {
     std::ostringstream temp;
@@ -363,7 +373,7 @@ void Make_Area_Statement::execute(Resource_Manager& rman)
   std::map< Uint31_Index, std::vector< Area_Block > > area_blocks;
   bool wraps_around_date_line = false;
   std::pair< Node::Id_Type, Way::Id_Type > odd_pair
-    (create_area_blocks(area_blocks, wraps_around_date_line, pivot_id, mit->second));
+    (create_area_blocks(area_blocks, wraps_around_date_line, pivot_id, *input_set));
   if (!(odd_pair.first == Node::Id_Type(0ull)))
   {
     std::ostringstream temp;
@@ -388,7 +398,7 @@ void Make_Area_Statement::execute(Resource_Manager& rman)
   for (std::map< Uint31_Index, std::vector< Area_Block > >::const_iterator
       it(area_blocks.begin()); it != area_blocks.end(); ++it)
     used_indices.push_back(it->first.val());
-  sort(used_indices.begin(), used_indices.end());
+  std::sort(used_indices.begin(), used_indices.end());
 
   Area_Location new_location(pivot_id, used_indices);
   new_location.tags = new_tags;
@@ -408,7 +418,8 @@ void Make_Area_Statement::execute(Resource_Manager& rman)
     area_updater->commit();
   }
 
-  into.areas[new_index].push_back(Area_Skeleton(new_location));
+  if (return_area)
+    into.areas[new_index].push_back(Area_Skeleton(new_location));
 
   transfer_output(rman, into);
   rman.health_check(*this);

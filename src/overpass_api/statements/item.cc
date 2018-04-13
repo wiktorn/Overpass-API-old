@@ -31,12 +31,14 @@ class Item_Constraint : public Query_Constraint
 		 const std::vector< Uint64 >& ids, bool invert_ids);
     bool collect(Resource_Manager& rman, Set& into, int type,
 		 const std::vector< Uint32_Index >& ids, bool invert_ids);
-    void filter(Resource_Manager& rman, Set& into, uint64 timestamp);
+    bool collect(Resource_Manager& rman, Set& into);
+    void filter(Resource_Manager& rman, Set& into);
     virtual ~Item_Constraint() {}
 
   private:
     Item_Statement* item;
 };
+
 
 template< typename TIndex, typename TObject >
 void collect_elements(const std::map< TIndex, std::vector< TObject > >& from,
@@ -78,10 +80,17 @@ void collect_elements(const std::map< TIndex, std::vector< TObject > >& from,
 bool Item_Constraint::collect_nodes(Resource_Manager& rman, Set& into,
 				    const std::vector< Uint64 >& ids, bool invert_ids)
 {
-  collect_elements(rman.sets()[item->get_result_name()].nodes, into.nodes,
-		   ids, invert_ids);
-  collect_elements(rman.sets()[item->get_result_name()].attic_nodes, into.attic_nodes,
-                   ids, invert_ids);
+  const Set* input = rman.get_set(item->get_input_name());
+  if (input)
+  {
+    collect_elements(input->nodes, into.nodes, ids, invert_ids);
+    collect_elements(input->attic_nodes, into.attic_nodes, ids, invert_ids);
+  }
+  else
+  {
+    into.nodes.clear();
+    into.attic_nodes.clear();
+  }
   return true;
 }
 
@@ -89,36 +98,71 @@ bool Item_Constraint::collect_nodes(Resource_Manager& rman, Set& into,
 bool Item_Constraint::collect(Resource_Manager& rman, Set& into,
 			      int type, const std::vector< Uint32_Index >& ids, bool invert_ids)
 {
-  if (type == QUERY_WAY)
+  const Set* input = rman.get_set(item->get_input_name());
+  if (input)
   {
-    collect_elements(rman.sets()[item->get_result_name()].ways, into.ways,
-                     ids, invert_ids);
-    collect_elements(rman.sets()[item->get_result_name()].attic_ways, into.attic_ways,
-		     ids, invert_ids);
+    if (type & QUERY_WAY)
+    {
+      collect_elements(input->ways, into.ways, ids, invert_ids);
+      collect_elements(input->attic_ways, into.attic_ways, ids, invert_ids);
+    }
+    if (type & QUERY_RELATION)
+    {
+      collect_elements(input->relations, into.relations, ids, invert_ids);
+      collect_elements(input->attic_relations, into.attic_relations, ids, invert_ids);
+    }
+    if (type & QUERY_AREA)
+      collect_elements(input->areas, into.areas, ids, invert_ids);
   }
-  if (type == QUERY_RELATION)
+  else
   {
-    collect_elements(rman.sets()[item->get_result_name()].relations, into.relations,
-		     ids, invert_ids);
-    collect_elements(rman.sets()[item->get_result_name()].attic_relations, into.attic_relations,
-                     ids, invert_ids);
+    into.ways.clear();
+    into.attic_ways.clear();
+    into.relations.clear();
+    into.attic_relations.clear();
+    into.areas.clear();
   }
-  if (type == QUERY_AREA)
-    collect_elements(rman.sets()[item->get_result_name()].areas, into.areas,
-		     ids, invert_ids);
   return true;
 }
 
 
-void Item_Constraint::filter(Resource_Manager& rman, Set& into, uint64 timestamp)
+bool Item_Constraint::collect(Resource_Manager& rman, Set& into)
 {
-  item_filter_map(into.nodes, rman.sets()[item->get_result_name()].nodes);
-  item_filter_map(into.attic_nodes, rman.sets()[item->get_result_name()].attic_nodes);
-  item_filter_map(into.ways, rman.sets()[item->get_result_name()].ways);
-  item_filter_map(into.attic_ways, rman.sets()[item->get_result_name()].attic_ways);
-  item_filter_map(into.relations, rman.sets()[item->get_result_name()].relations);
-  item_filter_map(into.attic_relations, rman.sets()[item->get_result_name()].attic_relations);
-  item_filter_map(into.areas, rman.sets()[item->get_result_name()].areas);
+  const Set* input = rman.get_set(item->get_input_name());
+  if (input)
+    into.deriveds = input->deriveds;
+  else
+    into.deriveds.clear();
+
+  return true;
+}
+
+
+void Item_Constraint::filter(Resource_Manager& rman, Set& into)
+{
+  const Set* input = rman.get_set(item->get_input_name());
+  if (input)
+  {
+    item_filter_map(into.nodes, input->nodes);
+    item_filter_map(into.attic_nodes, input->attic_nodes);
+    item_filter_map(into.ways, input->ways);
+    item_filter_map(into.attic_ways, input->attic_ways);
+    item_filter_map(into.relations, input->relations);
+    item_filter_map(into.attic_relations, input->attic_relations);
+    item_filter_map(into.areas, input->areas);
+    item_filter_map(into.deriveds, input->deriveds);
+  }
+  else
+  {
+    into.nodes.clear();
+    into.attic_nodes.clear();
+    into.ways.clear();
+    into.attic_ways.clear();
+    into.relations.clear();
+    into.attic_relations.clear();
+    into.areas.clear();
+    into.deriveds.clear();
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -127,16 +171,46 @@ Generic_Statement_Maker< Item_Statement > Item_Statement::statement_maker("item"
 
 Item_Statement::Item_Statement(int line_number_, const std::map< std::string, std::string >& input_attributes,
                                Parsed_Query& global_settings)
-    : Statement(line_number_)
+    : Output_Statement(line_number_)
 {
   std::map< std::string, std::string > attributes;
 
+  attributes["from"] = "_";
+  attributes["into"] = "_";
   attributes["set"] = "_";
 
   eval_attributes_array(get_name(), attributes, input_attributes);
 
-  output = attributes["set"];
+  if (attributes["set"] == "_")
+  {
+    input = attributes["from"];
+    set_output(attributes["into"]);
+  }
+  else if (attributes["from"] == "_" && attributes["into"] == "_")
+  {
+    input = attributes["set"];
+    set_output(attributes["set"]);
+  }
+  else
+    add_static_error("The attribute \"set\" of the element \"item\" can only be set "
+      "if the attributes \"from\" and \"into\" are both empty.");
 }
+
+
+void Item_Statement::execute(Resource_Manager& rman)
+{
+  if (input != get_result_name())
+  {
+    Set into;
+
+    const Set* input_set = rman.get_set(input);
+    if (input_set)
+      into = *input_set;
+
+    transfer_output(rman, into);
+  }
+}
+
 
 Item_Statement::~Item_Statement()
 {

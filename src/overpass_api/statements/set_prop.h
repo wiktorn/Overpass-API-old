@@ -34,42 +34,123 @@
 
 struct Set_Prop_Task
 {
-  enum Mode { single_key, set_id, generic };
+  enum Mode { single_key, set_id, set_geometry, generic };
 
-  Set_Prop_Task(Eval_Task* rhs_, const std::string& key_, Mode mode_) : rhs(rhs_), key(key_), mode(mode_) {}
-  ~Set_Prop_Task() { delete rhs; }
+  virtual ~Set_Prop_Task() {}
 
-  void process(Derived_Structure& result, bool& id_set) const;
+  virtual void process(Derived_Structure& result, bool& id_set) const = 0;
 
-  void process(const Node_Skeleton* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::vector< std::string >& declared_keys,
-    Derived_Structure& result, bool& id_set) const;
-  void process(const Attic< Node_Skeleton >* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::vector< std::string >& declared_keys,
-    Derived_Structure& result, bool& id_set) const;
-  void process(const Way_Skeleton* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::vector< std::string >& declared_keys,
-    Derived_Structure& result, bool& id_set) const;
-  void process(const Attic< Way_Skeleton >* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::vector< std::string >& declared_keys,
-    Derived_Structure& result, bool& id_set) const;
-  void process(const Relation_Skeleton* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::vector< std::string >& declared_keys,
-    Derived_Structure& result, bool& id_set) const;
-  void process(const Attic< Relation_Skeleton >* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::vector< std::string >& declared_keys,
-    Derived_Structure& result, bool& id_set) const;
-  void process(const Area_Skeleton* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::vector< std::string >& declared_keys,
-    Derived_Structure& result, bool& id_set) const;
-  void process(const Derived_Skeleton* elem,
-    const std::vector< std::pair< std::string, std::string > >* tags, const std::vector< std::string >& declared_keys,
-    Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Node_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const = 0;
+  virtual void process(const Element_With_Context< Attic< Node_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const = 0;
+  virtual void process(const Element_With_Context< Way_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const = 0;
+  virtual void process(const Element_With_Context< Attic< Way_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const = 0;
+  virtual void process(const Element_With_Context< Relation_Skeleton>& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const = 0;
+  virtual void process(const Element_With_Context< Attic< Relation_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const = 0;
+  virtual void process(const Element_With_Context< Area_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const = 0;
+  virtual void process(const Element_With_Context< Derived_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const = 0;
+};
+
+
+struct Set_Prop_Plain_Task : public Set_Prop_Task
+{
+  Set_Prop_Plain_Task(Eval_Task* rhs_, const std::string& key_, Mode mode_) : rhs(rhs_), key(key_), mode(mode_) {}
+  virtual ~Set_Prop_Plain_Task() { delete rhs; }
+
+  virtual void process(Derived_Structure& result, bool& id_set) const;
+
+  virtual void process(const Element_With_Context< Node_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Attic< Node_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Way_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Attic< Way_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Relation_Skeleton>& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Attic< Relation_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Area_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Derived_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
 
 private:
+  Set_Prop_Plain_Task(const Set_Prop_Plain_Task&);
+  const Set_Prop_Plain_Task& operator=(const Set_Prop_Plain_Task&);
+
   Eval_Task* rhs;
   std::string key;
   Mode mode;
+};
+
+
+struct Set_Prop_Generic_Task : public Set_Prop_Task
+{
+  virtual void process(Derived_Structure& result, bool& id_set) const;
+
+  virtual void process(const Element_With_Context< Node_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Attic< Node_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Way_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Attic< Way_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Relation_Skeleton>& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Attic< Relation_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Area_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Derived_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+
+  void add_key(const std::string& key, Eval_Task* task);
+
+private:
+  Owning_Array< Eval_Task* > rhs;
+  std::vector< std::string > keys;
+};
+
+
+struct Set_Prop_Geometry_Task : public Set_Prop_Task
+{
+  Set_Prop_Geometry_Task(Eval_Geometry_Task* rhs_) : rhs(rhs_) {}
+  virtual ~Set_Prop_Geometry_Task() { delete rhs; }
+
+  virtual void process(Derived_Structure& result, bool& id_set) const;
+
+  virtual void process(const Element_With_Context< Node_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Attic< Node_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Way_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Attic< Way_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Relation_Skeleton>& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Attic< Relation_Skeleton > >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Area_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+  virtual void process(const Element_With_Context< Derived_Skeleton >& data,
+    const std::vector< std::string >& declared_keys, Derived_Structure& result, bool& id_set) const;
+
+private:
+  Set_Prop_Geometry_Task(const Set_Prop_Plain_Task&);
+  const Set_Prop_Geometry_Task& operator=(const Set_Prop_Plain_Task&);
+
+  Eval_Geometry_Task* rhs;
 };
 
 
@@ -78,15 +159,21 @@ class Set_Prop_Statement : public Statement
 public:
   struct Statement_Maker : public Generic_Statement_Maker< Set_Prop_Statement >
   {
-    virtual Statement* create_statement(const Token_Node_Ptr& tree_it, QL_Context tree_context,
+    Statement_Maker() : Generic_Statement_Maker< Set_Prop_Statement >("set-prop") {}
+  };
+  static Statement_Maker statement_maker;
+
+  struct Evaluator_Maker : public Statement::Evaluator_Maker
+  {
+    virtual Statement* create_evaluator(const Token_Node_Ptr& tree_it, QL_Context tree_context,
         Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output);
-    Statement_Maker() : Generic_Statement_Maker< Set_Prop_Statement >("set-prop")
+    Evaluator_Maker()
     {
       Statement::maker_by_token()["="].push_back(this);
       Statement::maker_by_token()["!"].push_back(this);
     }
   };
-  static Statement_Maker statement_maker;
+  static Evaluator_Maker evaluator_maker;
 
   virtual std::string dump_xml(const std::string& indent) const;
   virtual std::string dump_compact_ql(const std::string&) const;
@@ -98,21 +185,20 @@ public:
   virtual std::string get_result_name() const { return ""; }
   virtual void add_statement(Statement* statement, std::string text);
   virtual void execute(Resource_Manager& rman) {}
-  virtual ~Set_Prop_Statement() {}
+  virtual ~Set_Prop_Statement() { delete key; }
 
-  std::pair< std::vector< Set_Usage >, uint > used_sets() const;
-  std::vector< std::string > used_tags() const;
+  virtual Requested_Context request_context() const;
 
-  Set_Prop_Task* get_task(const Prepare_Task_Context& context);
+  Set_Prop_Task* get_task(Prepare_Task_Context& context, const std::vector< std::string >& otherwise_set_keys);
 
-  const std::string* get_key() const { return input != "" ? 0 : &keys.front(); }
+  const std::string* get_key() const { return key; }
   bool has_value() const { return tag_value; }
-  bool should_set_id() const { return set_id; }
+  Set_Prop_Task::Mode get_mode() const { return mode; }
 
 private:
   std::string input;
-  std::vector< std::string > keys;
-  bool set_id;
+  std::string* key;
+  Set_Prop_Task::Mode mode;
   Evaluator* tag_value;
 };
 

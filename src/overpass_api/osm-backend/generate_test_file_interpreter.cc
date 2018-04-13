@@ -16,6 +16,8 @@
  * along with Overpass_API.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "../core/settings.h"
+
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -206,6 +208,77 @@ unsigned int relation_meta_zoom(unsigned int pattern_size)
     return 11;
 }
 
+
+void print_applicable_tags(unsigned int id)
+{
+  bool frame_printed = false;
+
+  if (id % 11 == 0)
+  {
+    if (!frame_printed)
+      std::cout<<",\n  \"tags\": {\n";
+    else
+      std::cout<<",\n";
+    frame_printed = true;
+
+    std::cout<<"    \"way_key_11\": \"way_value_"<<(id / 11 + 1)<<"\"";
+  }
+  if (id % 15 == 0)
+  {
+    if (!frame_printed)
+      std::cout<<",\n  \"tags\": {\n";
+    else
+      std::cout<<",\n";
+    frame_printed = true;
+
+    std::cout<<"    \"way_key_15\": \"way_value_15\"";
+  }
+  if (id % 2 == 0)
+  {
+    if (!frame_printed)
+      std::cout<<",\n  \"tags\": {\n";
+    else
+      std::cout<<",\n";
+    frame_printed = true;
+
+    std::cout<<"    \"way_key_2/4\": \"way_value_0\"";
+  }
+  if (id % 4 == 1)
+  {
+    if (!frame_printed)
+      std::cout<<",\n  \"tags\": {\n";
+    else
+      std::cout<<",\n";
+    frame_printed = true;
+
+    std::cout<<"    \"way_key_2/4\": \"way_value_1\"";
+  }
+  if (id % 5 == 0)
+  {
+    if (!frame_printed)
+      std::cout<<",\n  \"tags\": {\n";
+    else
+      std::cout<<",\n";
+    frame_printed = true;
+
+    std::cout<<"    \"way_key_5\": \"way_value_5\"";
+  }
+  if (id % 7 == 0)
+  {
+    if (!frame_printed)
+      std::cout<<",\n  \"tags\": {\n";
+    else
+      std::cout<<",\n";
+    frame_printed = true;
+
+    std::cout<<"    \"way_key_7\": \"way_value_"<<(id % 21 / 7)<<"\"";
+  }
+
+  if (frame_printed)
+    std::cout<<"\n  }";
+}
+
+
 int main(int argc, char* args[])
 {
   if (argc < 3)
@@ -223,7 +296,8 @@ int main(int argc, char* args[])
     "Content-type: application/osm3s+xml\n"
     "\n"
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-    "<osm version=\"0.6\" generator=\"Overpass API\">\n"
+    "<osm version=\"0.6\" generator=\"Overpass API "<<basic_settings().version<<" "
+        <<basic_settings().source_hash.substr(0, 8)<<"\">\n"
     "<note>The data included in this document is from www.openstreetmap.org. "
     "The data is made available under ODbL.</note>\n"
     "<meta osm_base=\"mock-up-init\"/>\n"
@@ -254,8 +328,6 @@ int main(int argc, char* args[])
     if (std::string(args[2]) == "interpreter_3")
       std::cout<<
       "<p><strong style=\"color:#FF0000\">Error</strong>: line 1: parse error: Unknown type \"foo\" </p>\n"
-      "<p><strong style=\"color:#FF0000\">Error</strong>: line 1: parse error: An empty query is not allowed </p>\n"
-      "<p><strong style=\"color:#FF0000\">Error</strong>: line 1: parse error: Unknown type \";\" </p>\n"
       "<p><strong style=\"color:#FF0000\">Error</strong>: line 1: parse error: An empty query is not allowed </p>\n";
     else if (std::string(args[2]) == "interpreter_4")
       std::cout<<
@@ -263,24 +335,16 @@ int main(int argc, char* args[])
     else if (std::string(args[2]) == "interpreter_5")
       std::cout<<
       "<p><strong style=\"color:#FF0000\">Error</strong>: line 1: parse error: Unknown type \"foo\" </p>\n"
-      "<p><strong style=\"color:#FF0000\">Error</strong>: line 1: parse error: An empty query is not allowed </p>\n"
-      "<p><strong style=\"color:#FF0000\">Error</strong>: line 1: parse error: Unknown type \";\" </p>\n"
-      "<p><strong style=\"color:#FF0000\">Error</strong>: line 2: parse error: An empty query is not allowed </p>\n";
+      "<p><strong style=\"color:#FF0000\">Error</strong>: line 1: parse error: An empty query is not allowed </p>\n";
     else if (std::string(args[2]) == "interpreter_6")
       std::cout<<
       "<p><strong style=\"color:#FF0000\">Error</strong>: line 2: parse error: Unknown type \"foo\" </p>\n"
-      "<p><strong style=\"color:#FF0000\">Error</strong>: line 2: parse error: An empty query is not allowed </p>\n"
-      "<p><strong style=\"color:#FF0000\">Error</strong>: line 2: parse error: Unknown type \";\" </p>\n"
       "<p><strong style=\"color:#FF0000\">Error</strong>: line 2: parse error: An empty query is not allowed </p>\n";
     else if (std::string(args[2]) == "interpreter_7")
       std::cout<<
       "<p><strong style=\"color:#FF0000\">Error</strong>: line 1: parse error: Unknown type \"foo\" </p>\n"
       "<p><strong style=\"color:#FF0000\">Error</strong>: line 1: parse error: An empty query is not allowed </p>\n"
-      "<p><strong style=\"color:#FF0000\">Error</strong>: line 1: parse error: Unknown type \";\" </p>\n"
-      "<p><strong style=\"color:#FF0000\">Error</strong>: line 2: parse error: An empty query is not allowed </p>\n"
       "<p><strong style=\"color:#FF0000\">Error</strong>: line 2: parse error: Unknown type \"foo\" </p>\n"
-      "<p><strong style=\"color:#FF0000\">Error</strong>: line 2: parse error: An empty query is not allowed </p>\n"
-      "<p><strong style=\"color:#FF0000\">Error</strong>: line 2: parse error: Unknown type \";\" </p>\n"
       "<p><strong style=\"color:#FF0000\">Error</strong>: line 2: parse error: An empty query is not allowed </p>\n";
     else if (std::string(args[2]) == "interpreter_8")
       std::cout<<
@@ -303,7 +367,8 @@ int main(int argc, char* args[])
       || std::string(args[2]) == "interpreter_17" || std::string(args[2]) == "interpreter_18"
       || std::string(args[2]) == "interpreter_19" || std::string(args[2]) == "interpreter_20"
       || std::string(args[2]) == "interpreter_21" || std::string(args[2]) == "interpreter_22"
-      || std::string(args[2]) == "interpreter_23" || std::string(args[2]) == "interpreter_38")
+      || std::string(args[2]) == "interpreter_23" || std::string(args[2]) == "interpreter_38"
+      || std::string(args[2]) == "interpreter_45")
   {
     std::cout<<
     "Content-type: application/json\n"
@@ -313,7 +378,8 @@ int main(int argc, char* args[])
     std::cout<<
     "{\n"
     "  \"version\": 0.6,\n"
-    "  \"generator\": \"Overpass API\",\n"
+    "  \"generator\": \"Overpass API "<<basic_settings().version<<" "
+        <<basic_settings().source_hash.substr(0, 8)<<"\",\n"
     "  \"osm3s\": {\n"
     "    \"timestamp_osm_base\": \"mock-up-init\",\n"
     "    \"copyright\": \"The data included in this document is from www.openstreetmap.org. "
@@ -324,7 +390,7 @@ int main(int argc, char* args[])
     if (std::string(args[2]) == "interpreter_11" || std::string(args[2]) == "interpreter_12"
         || std::string(args[2]) == "interpreter_17" || std::string(args[2]) == "interpreter_18"
 	|| std::string(args[2]) == "interpreter_20" || std::string(args[2]) == "interpreter_23"
-	|| std::string(args[2]) == "interpreter_38")
+	|| std::string(args[2]) == "interpreter_38" || std::string(args[2]) == "interpreter_45")
       std::cout<<
       "{\n"
       "  \"type\": \"node\",\n"
@@ -378,6 +444,133 @@ int main(int argc, char* args[])
       "    \"way_key_2/4\": \"way_value_0\"\n"
       "  }\n"
       "}";
+    if (std::string(args[2]) == "interpreter_45")
+    {
+      std::cout<<
+      ",\n"
+      "{\n"
+      "  \"type\": \"way\",\n"
+      "  \"id\": "<<(pattern_size*pattern_size/2 - pattern_size + 1)<<",\n"
+      "  \"bounds\": {\n"
+      "    \"minlat\": "<<51.5 - .5/pattern_size<<",\n"
+      "    \"minlon\": "<<7.5 + .5/pattern_size<<",\n"
+      "    \"maxlat\": "<<52. - .5/pattern_size<<",\n"
+      "    \"maxlon\": "<<7.5 + .5/pattern_size<<"\n"
+      "  },\n"
+      "  \"nodes\": [\n"
+      "    "<<pattern_size/2 + 1;
+      for (uint i = pattern_size/2 + pattern_size + 1; i < pattern_size*pattern_size; i += pattern_size)
+        std::cout<<",\n    "<<i;
+      std::cout<<
+      "\n  ],\n"
+      "  \"geometry\": ["
+      "\n    null";
+      for (uint i = 2; i < pattern_size/2; ++i)
+        std::cout<<",\n    null";
+      for (uint i = 0; i < pattern_size/2 + 1; ++i)
+        std::cout<<",\n    { \"lat\": "<<51.5 - .5/pattern_size + double(i)/pattern_size
+            <<", \"lon\": "<<7.5 + .5/pattern_size<<" }";
+      std::cout<<
+      "\n  ]";
+      print_applicable_tags(pattern_size*pattern_size/2 - pattern_size + 1);
+      std::cout<<
+      "\n}"
+      ",\n"
+      "{\n"
+      "  \"type\": \"way\",\n"
+      "  \"id\": "<<(pattern_size*pattern_size/2 - pattern_size/2)<<",\n"
+      "  \"bounds\": {\n"
+      "    \"minlat\": "<<51.5 + .5/pattern_size<<",\n"
+      "    \"minlon\": "<<7.5 - .5/pattern_size<<",\n"
+      "    \"maxlat\": "<<51.5 + .5/pattern_size<<",\n"
+      "    \"maxlon\": "<<8. - .5/pattern_size<<"\n"
+      "  },\n"
+      "  \"nodes\": [\n"
+      "    "<<pattern_size*pattern_size/2 + pattern_size;
+      for (uint i = pattern_size*pattern_size/2 + pattern_size - 1; i > pattern_size*pattern_size/2; --i)
+        std::cout<<",\n    "<<i;
+      std::cout<<
+      "\n  ],\n"
+      "  \"geometry\": [";
+      for (uint i = 0; i < pattern_size/2 + 1; ++i)
+        std::cout<<"\n    { \"lat\": "<<51.5 + .5/pattern_size
+            <<", \"lon\": "<<8. - double(i)/pattern_size - .5/pattern_size<<" },";
+      std::cout<<"\n    null";
+      for (uint i = 2; i < pattern_size/2; ++i)
+        std::cout<<",\n    null";
+      std::cout<<
+      "\n  ]";
+      print_applicable_tags(pattern_size*pattern_size/2 - pattern_size/2);
+      std::cout<<
+      "\n},\n"
+      "{\n"
+      "  \"type\": \"way\",\n"
+      "  \"id\": "<<(pattern_size*pattern_size/2 - 1)<<",\n"
+      "  \"nodes\": [\n"
+      "    "<<(pattern_size*pattern_size/2 + 1)<<",\n"
+      "    "<<(pattern_size/2 + 1)<<"\n"
+      "  ],\n"
+      "  \"geometry\": ["
+      "\n    null,"
+      "\n    null"
+      "\n  ]";
+      print_applicable_tags(pattern_size*pattern_size/2 - 1);
+      std::cout<<
+      "\n},\n"
+      "{\n"
+      "  \"type\": \"relation\",\n"
+      "  \"id\": 7,\n"
+      "  \"bounds\": {\n"
+      "    \"minlat\": "<<51.5 - .5/pattern_size<<",\n"
+      "    \"minlon\": "<<7.5 - .5/pattern_size<<",\n"
+      "    \"maxlat\": "<<52. - .5/pattern_size<<",\n"
+      "    \"maxlon\": "<<8. - .5/pattern_size<<"\n"
+      "  },\n"
+      "  \"members\": [\n"
+      "    {\n"
+      "      \"type\": \"way\",\n"
+      "      \"ref\": "<<(pattern_size*pattern_size/2 - pattern_size + 1)<<",\n"
+      "      \"role\": \"two\",\n"
+      "      \"geometry\": ["
+      "\n         null";
+      for (uint i = 2; i < pattern_size/2; ++i)
+        std::cout<<",\n         null";
+      for (uint i = 0; i < pattern_size/2 + 1; ++i)
+        std::cout<<",\n         { \"lat\": "<<51.5 - .5/pattern_size + double(i)/pattern_size
+            <<", \"lon\": "<<7.5 + .5/pattern_size<<" }";
+      std::cout<<
+      "\n      ]\n"
+      "    },\n"
+      "    {\n"
+      "      \"type\": \"way\",\n"
+      "      \"ref\": "<<(pattern_size*pattern_size/2 - pattern_size/2)<<",\n"
+      "      \"role\": \"one\",\n"
+      "      \"geometry\": [";
+      for (uint i = 0; i < pattern_size/2 + 1; ++i)
+        std::cout<<"\n         { \"lat\": "<<51.5 + .5/pattern_size
+            <<", \"lon\": "<<8. - double(i)/pattern_size - .5/pattern_size<<" },";
+      std::cout<<"\n         null";
+      for (uint i = 2; i < pattern_size/2; ++i)
+        std::cout<<",\n         null";
+      std::cout<<
+      "\n      ]\n"
+      "    },\n"
+      "    {\n"
+      "      \"type\": \"way\",\n"
+      "      \"ref\": "<<(pattern_size*pattern_size/2 - 1)<<",\n"
+      "      \"role\": \"zero\",\n"
+      "      \"geometry\": [\n"
+      "         null,\n"
+      "         null\n"
+      "      ]\n"
+      "    }\n"
+      "  ],\n"
+      "  \"tags\": {\n"
+      "    \"relation_key\": \"relation_few\",\n"
+      "    \"relation_key_7\": \"relation_value_1\"\n"
+      "  }\n"
+      "}";
+    }
     if (std::string(args[2]) == "interpreter_18" || std::string(args[2]) == "interpreter_19"
         || std::string(args[2]) == "interpreter_20" || std::string(args[2]) == "interpreter_23")
       std::cout<<",\n";
@@ -922,14 +1115,15 @@ int main(int argc, char* args[])
     "</body>\n"
     "</html>\n";
   }
-  else if (std::string(args[2]) == "interpreter_45")
+  else if (std::string(args[2]) == "interpreter_46")
   {
     std::cout<<
     "Content-type: application/json\n"
     "\n"
     "{\n"
     "  \"version\": 0.6,\n"
-    "  \"generator\": \"Overpass API\",\n"
+    "  \"generator\": \"Overpass API "<<basic_settings().version<<" "
+        <<basic_settings().source_hash.substr(0, 8)<<"\",\n"
     "  \"osm3s\": {\n"
     "    \"timestamp_osm_base\": \"mock-up-init\",\n"
     "    \"copyright\": \"The data included in this document is from www.openstreetmap.org. "
@@ -989,7 +1183,7 @@ int main(int argc, char* args[])
     "  ]\n"
     "}\n";
   }
-  else if (std::string(args[2]) == "interpreter_46")
+  else if (std::string(args[2]) == "interpreter_47")
   {
     std::cout<<
     "Content-type: text/html; charset=utf-8\n"

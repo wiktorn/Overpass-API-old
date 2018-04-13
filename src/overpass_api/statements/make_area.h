@@ -48,6 +48,7 @@ class Make_Area_Statement : public Output_Statement
 
   private:
     std::string input, pivot;
+    bool return_area;
 
     static std::pair< uint32, Uint64 > detect_pivot(const Set& pivot);
     static Node::Id_Type check_node_parity(const Set& pivot);
@@ -58,7 +59,7 @@ class Make_Area_Statement : public Output_Statement
     static int32 lon_(uint32 ll_index, uint64 coord);
     static void add_segment_blocks
         (std::map< Uint31_Index, std::vector< Area_Block > >& areas, uint32 id);
-	
+
     static bool is_used_;
 };
 

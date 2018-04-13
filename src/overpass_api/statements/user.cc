@@ -41,7 +41,7 @@ class User_Constraint : public Query_Constraint
 
     bool get_ranges(Resource_Manager& rman, std::set< std::pair< Uint31_Index, Uint31_Index > >& ranges);
     bool get_ranges(Resource_Manager& rman, std::set< std::pair< Uint32_Index, Uint32_Index > >& ranges);
-    void filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp);
+    void filter(const Statement& query, Resource_Manager& rman, Set& into);
     virtual ~User_Constraint() {}
 
   private:
@@ -110,7 +110,7 @@ void user_filter_map_attic
 }
 
 
-void User_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp)
+void User_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into)
 {
   std::set< Uint32_Index > user_ids = user->get_ids(*rman.get_transaction());
 
@@ -118,15 +118,17 @@ void User_Constraint::filter(const Statement& query, Resource_Manager& rman, Set
   user_filter_map(into.ways, rman, user_ids, meta_settings().WAYS_META);
   user_filter_map(into.relations, rman, user_ids, meta_settings().RELATIONS_META);
 
-  if (timestamp != NOW)
-  {
+  if (!into.attic_nodes.empty())
     user_filter_map_attic(into.attic_nodes, rman, user_ids,
 			  meta_settings().NODES_META, attic_settings().NODES_META);
+
+  if (!into.attic_ways.empty())
     user_filter_map_attic(into.attic_ways, rman, user_ids,
 			  meta_settings().WAYS_META, attic_settings().WAYS_META);
+
+  if (!into.attic_relations.empty())
     user_filter_map_attic(into.attic_relations, rman, user_ids,
 			  meta_settings().RELATIONS_META, attic_settings().RELATIONS_META);
-  }
 
   into.areas.clear();
 }
@@ -134,7 +136,55 @@ void User_Constraint::filter(const Statement& query, Resource_Manager& rman, Set
 //-----------------------------------------------------------------------------
 
 
-Generic_Statement_Maker< User_Statement > User_Statement::statement_maker("user");
+User_Statement::Statement_Maker User_Statement::statement_maker;
+User_Statement::Criterion_Maker User_Statement::criterion_maker;
+
+
+Statement* User_Statement::Criterion_Maker::create_criterion(const Token_Node_Ptr& input_tree,
+    const std::string& result_type, const std::string& into,
+    Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output)
+{
+  Token_Node_Ptr tree_it = input_tree;
+  uint line_nr = tree_it->line_col.first;
+  std::vector< std::string > users;
+
+  while (tree_it->token == "," && tree_it->rhs && tree_it->lhs)
+  {
+    users.push_back(tree_it.rhs()->token);
+    tree_it = tree_it.lhs();
+  }
+
+  if (tree_it->token == ":" && tree_it->rhs)
+    users.push_back(tree_it.rhs()->token);
+
+  std::reverse(users.begin(), users.end());
+
+  std::map< std::string, std::string > attributes;
+  attributes["into"] = into;
+  attributes["type"] = result_type;
+
+  std::string prefix;
+  if (tree_it->lhs && tree_it.lhs()->token == "user")
+  {
+    for (std::vector< std::string >::iterator it = users.begin(); it != users.end(); ++it)
+      *it = decode_json(*it, error_output);
+    prefix = "name";
+  }
+  else
+    prefix = "uid";
+
+  std::vector< std::string >::const_iterator it = users.begin();
+  if (it != users.end())
+    attributes[prefix] = *it;
+  for (uint i = 0; it != users.end(); ++it)
+  {
+    std::ostringstream id;
+    id<<prefix<<"_"<<++i;
+    attributes[id.str()] = *it;
+  }
+
+  return new User_Statement(line_nr, attributes, global_settings);
+}
 
 
 User_Statement::User_Statement
@@ -187,7 +237,7 @@ User_Statement::User_Statement
   if (!(user_ids.empty() ^ user_names.empty()))
   {
     std::ostringstream temp;
-    temp<<"Exactly one of the two attributes \"name\" and \"uid\" must be std::set.";
+    temp<<"Exactly one of the two attributes \"name\" and \"uid\" must be set.";
     add_static_error(temp.str());
   }
 
@@ -298,7 +348,7 @@ void User_Statement::execute(Resource_Manager& rman)
     constraint.get_ranges(rman, ranges);
     get_elements_by_id_from_db< Uint32_Index, Node_Skeleton >
         (into.nodes, into.attic_nodes,
-         std::vector< Node::Id_Type >(), false, rman.get_desired_timestamp(), ranges, *this, rman,
+         std::vector< Node::Id_Type >(), false, ranges, *this, rman,
          *osm_base_settings().NODES, *attic_settings().NODES);
     filter_attic_elements(rman, rman.get_desired_timestamp(), into.nodes, into.attic_nodes);
   }
@@ -309,7 +359,7 @@ void User_Statement::execute(Resource_Manager& rman)
     constraint.get_ranges(rman, ranges);
     get_elements_by_id_from_db< Uint31_Index, Way_Skeleton >
         (into.ways, into.attic_ways,
-         std::vector< Way::Id_Type >(), false, rman.get_desired_timestamp(), ranges, *this, rman,
+         std::vector< Way::Id_Type >(), false, ranges, *this, rman,
          *osm_base_settings().WAYS, *attic_settings().WAYS);
     filter_attic_elements(rman, rman.get_desired_timestamp(), into.ways, into.attic_ways);
   }
@@ -320,7 +370,7 @@ void User_Statement::execute(Resource_Manager& rman)
     constraint.get_ranges(rman, ranges);
     get_elements_by_id_from_db< Uint31_Index, Relation_Skeleton >
         (into.relations, into.attic_relations,
-         std::vector< Relation::Id_Type >(), false, rman.get_desired_timestamp(), ranges, *this, rman,
+         std::vector< Relation::Id_Type >(), false, ranges, *this, rman,
          *osm_base_settings().RELATIONS, *attic_settings().RELATIONS);
     filter_attic_elements(rman, rman.get_desired_timestamp(), into.relations, into.attic_relations);
   }
@@ -328,12 +378,12 @@ void User_Statement::execute(Resource_Manager& rman)
   if (bbox_limitation)
   {
     Bbox_Filter filter(*bbox_limitation);
-    filter.filter(into, rman.get_desired_timestamp());
-    constraint.filter(*this, rman, into, rman.get_desired_timestamp());
-    filter.filter(*this, rman, into, rman.get_desired_timestamp());
+    filter.filter(into);
+    constraint.filter(*this, rman, into);
+    filter.filter(*this, rman, into, rman.get_desired_timestamp() != NOW);
   }
   else
-    constraint.filter(*this, rman, into, rman.get_desired_timestamp());
+    constraint.filter(*this, rman, into);
 
   transfer_output(rman, into);
   rman.health_check(*this);

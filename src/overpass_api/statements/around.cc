@@ -185,7 +185,7 @@ std::set< std::pair< Uint32_Index, Uint32_Index > > children
 	uint32 lat = 0;
 	uint32 lon = 0;
 	uint32 offset = 0;
-	
+
 	if (idx.val() & 0x00000001)
 	{
 	  lat = upper_ilat(idx.val() & 0x2aaaaaa8);
@@ -234,7 +234,7 @@ std::set< std::pair< Uint32_Index, Uint32_Index > > children
 	  lon = 0;
 	  offset = 0x8000;
 	}
-	
+
 	ranges.push_back(std::make_pair(ll_upper(lat<<16, lon<<16),
 				   ll_upper((lat+offset-1)<<16, (lon+offset-1)<<16)+1));
 	ranges.push_back(std::make_pair(ll_upper(lat<<16, (lon+offset)<<16),
@@ -275,8 +275,8 @@ class Around_Constraint : public Query_Constraint
         (Resource_Manager& rman, std::set< std::pair< Uint32_Index, Uint32_Index > >& ranges);
     bool get_ranges
         (Resource_Manager& rman, std::set< std::pair< Uint31_Index, Uint31_Index > >& ranges);
-    void filter(Resource_Manager& rman, Set& into, uint64 timestamp);
-    void filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp);
+    void filter(Resource_Manager& rman, Set& into);
+    void filter(const Statement& query, Resource_Manager& rman, Set& into);
     virtual ~Around_Constraint() {}
 
   private:
@@ -290,7 +290,8 @@ bool Around_Constraint::get_ranges
 {
   ranges_used = true;
 
-  ranges = around->calc_ranges(rman.sets()[around->get_source_name()], rman);
+  const Set* input = rman.get_set(around->get_source_name());
+  ranges = around->calc_ranges(input ? *input : Set(), rman);
   return true;
 }
 
@@ -305,7 +306,7 @@ bool Around_Constraint::get_ranges
 }
 
 
-void Around_Constraint::filter(Resource_Manager& rman, Set& into, uint64 timestamp)
+void Around_Constraint::filter(Resource_Manager& rman, Set& into)
 {
   {
     std::set< std::pair< Uint32_Index, Uint32_Index > > ranges;
@@ -430,7 +431,7 @@ void filter_relations_expensive(const Around_Statement& around,
 	    continue;
 	  double lat(::lat(second_nd->first.val(), second_nd->second->ll_lower));
 	  double lon(::lon(second_nd->first.val(), second_nd->second->ll_lower));
-	
+
 	  if (around.is_inside(lat, lon))
 	  {
 	    local_into.push_back(*iit);
@@ -456,9 +457,10 @@ void filter_relations_expensive(const Around_Statement& around,
 }
 
 
-void Around_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into, uint64 timestamp)
+void Around_Constraint::filter(const Statement& query, Resource_Manager& rman, Set& into)
 {
-  around->calc_lat_lons(rman.sets()[around->get_source_name()], *around, rman);
+  const Set* input = rman.get_set(around->get_source_name());
+  around->calc_lat_lons(input ? *input : Set(), *around, rman);
 
   filter_nodes_expensive(*around, into.nodes);
   filter_ways_expensive(*around, Way_Geometry_Store(into.ways, query, rman), into.ways);
@@ -474,7 +476,7 @@ void Around_Constraint::filter(const Statement& query, Resource_Manager& rman, S
         = relation_node_members(&query, rman, into.relations, &node_ranges);
     std::vector< std::pair< Uint32_Index, const Node_Skeleton* > > node_members_by_id
         = order_by_id(node_members, Order_By_Node_Id());
-	
+
     // Retrieve all ways referred by the relations.
     std::set< std::pair< Uint31_Index, Uint31_Index > > way_ranges;
     get_ranges(rman, way_ranges);
@@ -489,40 +491,93 @@ void Around_Constraint::filter(const Statement& query, Resource_Manager& rman, S
         Way_Geometry_Store(way_members_, query, rman), into.relations);
   }
 
-  if (timestamp != NOW)
-  {
+  if (!into.attic_nodes.empty())
     filter_nodes_expensive(*around, into.attic_nodes);
-    filter_ways_expensive(*around, Way_Geometry_Store(into.attic_ways, timestamp, query, rman), into.attic_ways);
 
-    {
-      //Process relations
-      std::set< std::pair< Uint32_Index, Uint32_Index > > node_ranges;
-      get_ranges(rman, node_ranges);
+  if (!into.attic_ways.empty())
+    filter_ways_expensive(*around, Way_Geometry_Store(into.attic_ways, query, rman), into.attic_ways);
 
-      std::map< Uint32_Index, std::vector< Attic< Node_Skeleton > > > node_members
-          = relation_node_members(&query, rman, into.attic_relations, timestamp, &node_ranges);
-      std::vector< std::pair< Uint32_Index, const Node_Skeleton* > > node_members_by_id
-          = order_attic_by_id(node_members, Order_By_Node_Id());
+  if (!into.attic_relations.empty())
+  {
+    //Process relations
+    std::set< std::pair< Uint32_Index, Uint32_Index > > node_ranges;
+    get_ranges(rman, node_ranges);
 
-      // Retrieve all ways referred by the relations.
-      std::set< std::pair< Uint31_Index, Uint31_Index > > way_ranges;
-      get_ranges(rman, way_ranges);
+    std::map< Uint32_Index, std::vector< Attic< Node_Skeleton > > > node_members
+        = relation_node_members(&query, rman, into.attic_relations, &node_ranges);
+    std::vector< std::pair< Uint32_Index, const Node_Skeleton* > > node_members_by_id
+        = order_attic_by_id(node_members, Order_By_Node_Id());
 
-      std::map< Uint31_Index, std::vector< Attic< Way_Skeleton > > > way_members_
-          = relation_way_members(&query, rman, into.attic_relations, timestamp, &way_ranges);
-      std::vector< std::pair< Uint31_Index, const Way_Skeleton* > > way_members_by_id
-          = order_attic_by_id(way_members_, Order_By_Way_Id());
+    // Retrieve all ways referred by the relations.
+    std::set< std::pair< Uint31_Index, Uint31_Index > > way_ranges;
+    get_ranges(rman, way_ranges);
 
-      filter_relations_expensive(*around, node_members_by_id, way_members_by_id,
-          Way_Geometry_Store(way_members_, timestamp, query, rman), into.attic_relations);
-    }
+    std::map< Uint31_Index, std::vector< Attic< Way_Skeleton > > > way_members_
+        = relation_way_members(&query, rman, into.attic_relations, &way_ranges);
+    std::vector< std::pair< Uint31_Index, const Way_Skeleton* > > way_members_by_id
+        = order_attic_by_id(way_members_, Order_By_Way_Id());
+
+    filter_relations_expensive(*around, node_members_by_id, way_members_by_id,
+        Way_Geometry_Store(way_members_, query, rman), into.attic_relations);
   }
+
   //TODO: areas
 }
 
 //-----------------------------------------------------------------------------
 
-Generic_Statement_Maker< Around_Statement > Around_Statement::statement_maker("around");
+Around_Statement::Statement_Maker Around_Statement::statement_maker;
+Around_Statement::Criterion_Maker Around_Statement::criterion_maker;
+
+
+Statement* Around_Statement::Criterion_Maker::create_criterion(const Token_Node_Ptr& input_tree,
+    const std::string& type, const std::string& into,
+    Statement::Factory& stmt_factory, Parsed_Query& global_settings, Error_Output* error_output)
+{
+  Token_Node_Ptr tree_it = input_tree;
+  uint line_nr = tree_it->line_col.first;
+  std::string lat;
+  std::string lon;
+
+  if (tree_it->token == "," && tree_it->rhs && tree_it->lhs)
+  {
+    lon = tree_it.rhs()->token;
+    tree_it = tree_it.lhs();
+
+    if (tree_it->token != "," || !tree_it->rhs || !tree_it->lhs)
+    {
+      if (error_output)
+        error_output->add_parse_error("around requires one or three arguments", line_nr);
+      return 0;
+    }
+
+    lat = tree_it.rhs()->token;
+    tree_it = tree_it.lhs();
+  }
+
+  if (tree_it->token == ":" && tree_it->rhs)
+  {
+    std::string radius = decode_json(tree_it.rhs()->token, error_output);
+
+    tree_it = tree_it.lhs();
+    std::string from = "_";
+    if (tree_it->token == "." && tree_it->rhs)
+      from = tree_it.rhs()->token;
+
+    std::map< std::string, std::string > attributes;
+    attributes["from"] = from;
+    attributes["into"] = into;
+    attributes["radius"] = radius;
+    attributes["lat"] = lat;
+    attributes["lon"] = lon;
+    return new Around_Statement(line_nr, attributes, global_settings);
+  }
+  else if (error_output)
+    error_output->add_parse_error("around requires the radius as first argument", line_nr);
+
+  return 0;
+}
+
 
 Around_Statement::Around_Statement
     (int line_number_, const std::map< std::string, std::string >& input_attributes, Parsed_Query& global_settings)
@@ -580,19 +635,6 @@ Around_Statement::~Around_Statement()
   for (std::vector< Query_Constraint* >::const_iterator it = constraints.begin();
       it != constraints.end(); ++it)
     delete *it;
-}
-
-double great_circle_dist(double lat1, double lon1, double lat2, double lon2)
-{
-  if (lat1 == lat2 && lon1 == lon2)
-    return 0;
-  double scalar_prod =
-      sin(lat1/90.0*acos(0))*sin(lat2/90.0*acos(0)) +
-      cos(lat1/90.0*acos(0))*sin(lon1/90.0*acos(0))*cos(lat2/90.0*acos(0))*sin(lon2/90.0*acos(0)) +
-      cos(lat1/90.0*acos(0))*cos(lon1/90.0*acos(0))*cos(lat2/90.0*acos(0))*cos(lon2/90.0*acos(0));
-  if (scalar_prod > 1)
-    scalar_prod = 1;
-  return acos(scalar_prod)*(10*1000*1000/acos(0));
 }
 
 
@@ -924,19 +966,18 @@ void Around_Statement::calc_lat_lons(const Set& input, Statement& query, Resourc
       = relation_way_members(&query, rman, input.relations);
   add_ways(way_members, Way_Geometry_Store(way_members, query, rman));
 
-  uint64 timestamp = rman.get_desired_timestamp();
-  if (timestamp != NOW)
+  if (rman.get_desired_timestamp() != NOW)
   {
     add_nodes(input.attic_nodes);
-    add_ways(input.attic_ways, Way_Geometry_Store(input.attic_ways, rman.get_desired_timestamp(), query, rman));
+    add_ways(input.attic_ways, Way_Geometry_Store(input.attic_ways, query, rman));
 
     // Retrieve all node and way members referred by the relations.
-    add_nodes(relation_node_members(&query, rman, input.attic_relations, timestamp));
+    add_nodes(relation_node_members(&query, rman, input.attic_relations));
 
     // Retrieve all ways referred by the relations.
     std::map< Uint31_Index, std::vector< Attic< Way_Skeleton > > > way_members
-        = relation_way_members(&query, rman, input.attic_relations, timestamp);
-    add_ways(way_members, Way_Geometry_Store(way_members, timestamp, query, rman));
+        = relation_way_members(&query, rman, input.attic_relations);
+    add_ways(way_members, Way_Geometry_Store(way_members, query, rman));
   }
 }
 
@@ -951,7 +992,7 @@ bool Around_Statement::is_inside(double lat, double lon) const
         cit != mit->second.end(); ++cit)
     {
       if ((radius > 0 && great_circle_dist(cit->first, cit->second, lat, lon) <= radius)
-          || (cit->first == lat && cit->second == lon))
+          || (std::abs(cit->first - lat) < 1e-7 && std::abs(cit->second - lon) < 1e-7))
         return true;
     }
   }
@@ -1046,9 +1087,9 @@ void Around_Statement::execute(Resource_Manager& rman)
   constraint.get_ranges(rman, ranges);
   get_elements_by_id_from_db< Uint32_Index, Node_Skeleton >
       (into.nodes, into.attic_nodes,
-       std::vector< Node::Id_Type >(), false, rman.get_desired_timestamp(), ranges, *this, rman,
+       std::vector< Node::Id_Type >(), false, ranges, *this, rman,
        *osm_base_settings().NODES, *attic_settings().NODES);
-  constraint.filter(*this, rman, into, rman.get_desired_timestamp());
+  constraint.filter(*this, rman, into);
   filter_attic_elements(rman, rman.get_desired_timestamp(), into.nodes, into.attic_nodes);
 
   transfer_output(rman, into);

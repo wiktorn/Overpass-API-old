@@ -28,7 +28,7 @@
 #include "statement.h"
 
 
-class Collection_Print_Target;
+class Set_Comparison;
 
 
 class Print_Statement : public Statement
@@ -42,9 +42,6 @@ class Print_Statement : public Statement
 
     static Generic_Statement_Maker< Print_Statement > statement_maker;
 
-    void set_collect_lhs();
-    void set_collect_rhs(bool add_deletion_information);
-
     static std::string mode_string_xml(Output_Mode mode)
     {
       if ((mode & (Output_Mode::VERSION | Output_Mode::META)) == (Output_Mode::VERSION | Output_Mode::META))
@@ -55,10 +52,10 @@ class Print_Statement : public Statement
         return " mode=\"tags\"";
       else if ((mode & Output_Mode::MEMBERS) == Output_Mode::MEMBERS)
         return " mode=\"skeleton\"";
-      else if ((mode & Output_Mode::ID) == Output_Mode::ID)
-        return " mode=\"ids_only\"";
+      else if ((mode & Output_Mode::COUNT) == Output_Mode::COUNT)
+        return " mode=\"count\"";
 
-      return " mode=\"count\"";
+      return " mode=\"ids_only\"";
     }
 
     static std::string mode_string_ql(Output_Mode mode)
@@ -71,10 +68,10 @@ class Print_Statement : public Statement
         return " tags";
       else if ((mode & Output_Mode::MEMBERS) == Output_Mode::MEMBERS)
         return " skel";
-      else if ((mode & Output_Mode::ID) == Output_Mode::ID)
-        return " ids";
+      else if ((mode & Output_Mode::COUNT) == Output_Mode::COUNT)
+        return " count";
 
-      return " count";
+      return " ids";
     }
 
     static std::string geometry_string_xml(Output_Mode mode)
@@ -95,16 +92,26 @@ class Print_Statement : public Statement
     static std::string geometry_string_ql(Output_Mode mode)
     {
       if ((mode & (Output_Mode::GEOMETRY | Output_Mode::BOUNDS | Output_Mode::CENTER))
-          == (Output_Mode::GEOMETRY | Output_Mode::BOUNDS | Output_Mode::CENTER))
+          == (Output_Mode::GEOMETRY | Output_Mode::BOUNDS))
         return " geom";
       else if ((mode & (Output_Mode::GEOMETRY | Output_Mode::BOUNDS | Output_Mode::CENTER))
-          == (Output_Mode::BOUNDS | Output_Mode::CENTER))
+          == (Output_Mode::BOUNDS))
         return " bb";
       else if ((mode & (Output_Mode::GEOMETRY | Output_Mode::BOUNDS | Output_Mode::CENTER))
           == Output_Mode::CENTER)
         return " center";
 
       return "";
+    }
+
+    static std::string ids_string_xml(Output_Mode mode)
+    {
+      return (mode & Output_Mode::ID) ? "" : " ids=\"no\"";
+    }
+
+    static std::string ids_string_ql(Output_Mode mode)
+    {
+      return (mode & Output_Mode::ID) ? "" : " noids";
     }
 
     virtual std::string dump_xml(const std::string& indent) const
@@ -115,6 +122,7 @@ class Print_Statement : public Statement
           + (order == order_by_id ? "" : " order=\"quadtile\"")
           + (limit == std::numeric_limits< unsigned int >::max() ? "" : " limit=\"" + ::to_string(limit) + "\"")
           + geometry_string_xml(mode)
+          + ids_string_xml(mode)
           + (south > north ? "" : " s=\"" + to_string(south) + "\"")
           + (south > north ? "" : " w=\"" + to_string(west) + "\"")
           + (south > north ? "" : " n=\"" + to_string(north) + "\"")
@@ -132,8 +140,9 @@ class Print_Statement : public Statement
           + (order == order_by_id ? "" : " qt")
           + (limit == std::numeric_limits< unsigned int >::max() ? "" : " " + ::to_string(limit))
           + geometry_string_ql(mode)
+          + ids_string_ql(mode)
           + (south > north ? "" : "(" + to_string(south) + "," + to_string(west) + ","
-              + to_string(north) + "," + to_string(east) + ")");
+              + to_string(north) + "," + to_string(east) + ")") + ";";
     }
 
   private:
@@ -141,9 +150,8 @@ class Print_Statement : public Statement
     Output_Mode mode;
     enum { order_by_id, order_by_quadtile } order;
     unsigned int limit;
-    Collection_Print_Target* collection_print_target;
-    enum { dont_collect, collect_lhs, collect_rhs } collection_mode;
-    bool add_deletion_information;
+    Set_Comparison* collection_print_target;
+    bool diff_valid;
 
     double south;
     double north;

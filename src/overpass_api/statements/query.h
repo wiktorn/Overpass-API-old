@@ -29,8 +29,9 @@
 
 const int QUERY_NODE = 1;
 const int QUERY_WAY = 2;
-const int QUERY_RELATION = 3;
-const int QUERY_AREA = 4;
+const int QUERY_RELATION = 4;
+const int QUERY_DERIVED = 8;
+const int QUERY_AREA = 16;
 
 
 typedef enum { nothing, /*ids_collected,*/ ranges_collected, data_collected } Answer_State;
@@ -62,6 +63,12 @@ class Query_Statement : public Output_Statement
         return "way";
       else if (type == QUERY_RELATION)
         return "relation";
+      else if (type == QUERY_DERIVED)
+        return "derived";
+      else if (type == QUERY_AREA)
+        return "area";
+      else if (type == (QUERY_NODE | QUERY_WAY | QUERY_RELATION))
+        return "nwr";
 
       return "area";
     }
@@ -106,7 +113,7 @@ class Query_Statement : public Output_Statement
         result += "(bbox)";
 
       return result + (pretty && proper_substatement_count > 1 && dump_ql_result_name() != "" ? "\n  " + indent : "")
-          + dump_ql_result_name();
+          + dump_ql_result_name() + ";";
     }
 
   private:
@@ -133,7 +140,7 @@ class Query_Statement : public Output_Statement
     std::vector< Id_Type > collect_ids
         (const File_Properties& file_prop,
          Resource_Manager& rman, bool check_keys_late);
-        	
+
     template< class Id_Type >
     std::vector< std::pair< Id_Type, Uint31_Index > > collect_non_ids
         (const File_Properties& file_prop, const File_Properties& attic_file_prop,
@@ -162,6 +169,8 @@ class Query_Statement : public Output_Statement
          const File_Properties& file_prop,
          Resource_Manager& rman, Transaction& transaction);
 
+    void filter_by_tags(std::map< Uint31_Index, std::vector< Derived_Structure > >& items);
+
     template< typename Skeleton, typename Id_Type, typename Index >
     void progress_1(std::vector< Id_Type >& ids, std::vector< Index >& range_req,
                     bool& invert_ids, uint64 timestamp,
@@ -184,6 +193,8 @@ class Query_Statement : public Output_Statement
     void collect_elems(std::vector< Id_Type >& ids,
 				 bool& invert_ids, Answer_State& answer_state, Set& into,
 				 Resource_Manager& rman);
+
+    void collect_elems(Answer_State& answer_state, Set& into, Resource_Manager& rman);
 };
 
 
